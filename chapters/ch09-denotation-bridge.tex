@@ -1,0 +1,190 @@
+\chapter{The Denotation Bridge: What Do Five Numbers \emph{Mean}?}
+\label{ch:denotation}
+
+\section{Two worlds, one bridge}
+
+We now hold two very different objects. On one side, mathematics:
+the field $\Fp$, where elements are abstract clock positions and $+$ means
+ideal modular addition. On the other side, the extracted model: arrays of
+five \lean{U64} words, shuffled by loads, adds, and stores. The entire
+question of verified cryptography is how to say --- precisely --- that the
+second \emph{implements} the first.
+
+The answer is a single function, small enough to write on one line and
+important enough to carry this whole book. Given limbs
+$a = (a_0, a_1, a_2, a_3, a_4)$, define the \textbf{denotation}:
+\[
+\denote{a} \;=\; a_0 + 2^{51} a_1 + 2^{102} a_2 + 2^{153} a_3 + 2^{204} a_4
+\;\in\; \Fp .
+\]
+Read $\denote{a}$ as ``the field element these limbs \emph{mean}.'' It is
+positional notation, nothing more --- base $2^{51}$ instead of base 10, with
+the result interpreted on the clock face of $\Fp$. In Lean:
+
+\begin{lstlisting}[language=Lean]
+def denote (a : Array U64 5) : ZMod p :=
+  a[0].val + 2^51 * a[1].val + 2^102 * a[2].val
+           + 2^153 * a[3].val + 2^204 * a[4].val
+\end{lstlisting}
+
+With the bridge in hand, correctness of an operation becomes a
+\emph{commuting square} --- one picture you should internalize until you see
+it in your sleep:
+
+\begin{center}
+\begin{tikzpicture}[
+  world/.style={font=\small,align=center},
+  arr/.style={-{Stealth},thick,ink2},
+  lbl/.style={font=\small\color{ink2}}
+]
+  \node[world] (tl) at (0,2.6)   {$(a, b)$\\ \footnotesize limb arrays};
+  \node[world] (tr) at (7.2,2.6) {$\mathtt{add}(a,b)$\\ \footnotesize limb array};
+  \node[world] (bl) at (0,0)     {$(\denote{a}, \denote{b})$\\ \footnotesize field elements};
+  \node[world] (br) at (7.2,0)   {$\denote{a} + \denote{b}$\\ \footnotesize field element};
+  \draw[arr] (tl) -- node[lbl,above] {machine code} (tr);
+  \draw[arr] (bl) -- node[lbl,below] {ideal math} (br);
+  \draw[arr] (tl) -- node[lbl,left]  {$\denote{\cdot}$} (bl);
+  \draw[arr] (tr) -- node[lbl,right] {$\denote{\cdot}$} (br);
+  \node[font=\small\color{accent},align=center] at (3.6,1.3)
+    {\textbf{the theorem:}\\ both routes agree};
+\end{tikzpicture}
+\end{center}
+
+\begin{bigidea}
+\textbf{The correctness of an implementation is the statement that
+denotation commutes with every operation:}
+\[
+\denote{\mathtt{add}(a,b)} = \denote{a} + \denote{b},
+\qquad
+\denote{\mathtt{mul}(a,b)} = \denote{a} \cdot \denote{b},
+\qquad\dots
+\]
+The left-hand side lives in the machine world (with its bounds hypotheses
+and \lean{Result}s); the right-hand side is pure mathematics. One equation
+per operation, and the ugly optimized code is pinned, forever, to the
+textbook meaning. Every verified-crypto project you will ever read is this
+diagram, instantiated.
+\end{bigidea}
+
+\section{Why redundancy is freedom (and where bugs hide)}
+
+A subtlety with consequences: denotation is \textbf{many-to-one}. The limb
+arrays $(19, 0, 0, 0, 0)$ and $(p + 19 \bmod 2^{\cdots}, \dots)$ --- or more
+mundanely, unreduced sums whose limbs exceed $2^{51}$ --- can denote the
+\emph{same} field element. The representation has slack, and the
+implementation \emph{exploits} it: the fast \code{add} from
+Chapter~\ref{ch:rust} just adds limbs pairwise, letting values drift above
+$2^{51}$, and nobody reduces until a cheaper moment. The commuting square
+still closes because $\denote{\cdot}$ doesn't care how bloated the limbs are
+--- positional value is positional value.
+
+This is also exactly where the carry bugs of Chapter~\ref{ch:why} live: code
+that is correct only while the drift stays within headroom, and wrong on the
+rare inputs where it spills. In the verified development that danger becomes
+a visible, machine-checked pair of clauses attached to every operation:
+
+\begin{lstlisting}[language=Lean]
+theorem add_spec (ha : Bnd54 a) (hb : Bnd54 b) :
+    ∃ c, add a b = .ok c
+       ∧ Bnd55 c                        -- (1) bounds: the envelope holds
+       ∧ denote c = denote a + denote b -- (2) value: the meaning is right
+\end{lstlisting}
+
+Clause (2) is the commuting square. Clause (1) feeds the \emph{next}
+operation's hypothesis --- correctness composes only because every theorem
+hands the following one the envelope it requires. A chain of such specs is
+the formal skeleton of ``this sequence of optimized operations computes the
+formula we claim.''
+
+\begin{aha}
+The denotation idea is vastly older and bigger than cryptography. Compilers
+prove ``optimized code means the same as naive code''; databases prove
+``this query plan means the same query''; hardware verifies ``this pipelined
+circuit means this instruction set.'' The pattern --- map both sides into a
+mathematical meaning-space and prove the square commutes --- is called
+\emph{denotational semantics}, and you have now used it for real. It is the
+single most transferable idea in this book.
+\end{aha}
+
+\section{Multiplication: where the bridge earns its keep}
+
+Addition's square closes in an afternoon. Multiplication is the boss fight,
+and seeing \emph{why} teaches you what verified arithmetic is really like.
+Schoolbook multiplication of two 5-limb numbers produces nine columns of
+partial products $\sum_{i+j=k} a_i b_j$; each column then owes a
+\emph{carry} to the next; and columns $k \ge 5$ --- weights $2^{255}$ and up
+--- must be folded back using the Chapter~\ref{ch:modular} identity
+$2^{255} \equiv 19$. The implementation interleaves all three concerns for
+speed. The proof must un-interleave them:
+
+\[
+\denote{\mathtt{mul}(a,b)}
+\;\overset{?}{=}\;
+\Big(\textstyle\sum_{k=0}^{8} 2^{51k} \sum_{i+j=k} a_i b_j \Big) \bmod p
+\;\overset{?}{=}\; \denote{a} \cdot \denote{b} .
+\]
+
+The right equality is algebra --- \lean{ring} territory. The left is a walk
+through the extracted code: every intermediate \lean{U128} product bounded
+(no overflow --- the $2^{54}$ headroom at work), every carry accounted,
+every $\times 19$ fold placed. In the companion projects this is a long
+\lean{calc}-and-\lean{have} museum: dozens of small steps, each dispatched
+by \lean{omega} or a bound lemma, composed into one commuting square.
+
+One more representational dialect, because you will meet it in the Pasta
+repos: \textbf{Montgomery form} stores $x$ as $x \cdot R \bmod p$ (with
+$R = 2^{256}$) because it makes reduction after multiplication cheap. The
+bridge absorbs the twist without complaint --- define
+$\denote{a}_{\mathrm{M}} = (\text{positional value of } a) \cdot R^{-1}$
+and the same commuting squares govern everything. Denotation is a
+\emph{policy about meaning}, and it bends to fit the representation, not
+the other way around.
+
+\begin{pitfall}
+When a denotation proof refuses to close, the failure is information ---
+read it like a detective, in order: (1) Is the \emph{bound} hypothesis
+strong enough for the intermediate products? (Count bits, on paper.)
+(2) Is the \emph{denotation} right for this representation --- radix, limb
+count, Montgomery factor? (3) Only then suspect the code. In the companion
+projects this checklist ran hundreds of times; its order reflects the actual
+base rates of what was wrong.
+\end{pitfall}
+
+\begin{tryit}
+Open \code{exercises/Ch09.lean}. It builds a miniature of the whole story
+you can hold in your head: a \emph{2-limb, radix-4} representation of
+$\Zmod{15}$ (limbs are values $0$--$3$, denotation $a_0 + 4a_1$, and
+$16 \equiv 1$ makes the fold trivial). You will write \lean{denote}, prove
+the commuting square for the provided \lean{add} with carry, then for
+\lean{mul} with its fold --- every conceptual ingredient of the dalek proof,
+at a scale where \lean{decide} can double-check your work.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Compute by hand the denotation of the limb arrays $(19,0,0,0,0)$
+and $(0,0,0,0,2^{51})$ in the radix-51 system, reducing mod $p = 2^{255}-19$.
+Conclude that $\denote{\cdot}$ is not injective by exhibiting the collision.}
+
+\exercise{In the mini-system of the Try It box, find two distinct limb pairs
+denoting the same element of $\Zmod{15}$, and check that the provided
+\lean{add} treats them interchangeably \emph{as far as denotation goes} ---
+compute both sides.}
+
+\exercise{Sketch the multiplication column sums $\sum_{i+j=k} a_i b_j$ for
+the 2-limb system and carry out the fold $16 \equiv 1$ by hand for
+$a = (3,2)$, $b = (1,3)$. Check against direct computation in $\Zmod{15}$.}
+
+\exercise{(Paper, challenge) For the radix-51 system with limbs bounded by
+$2^{54}$: bound one column $\sum_{i+j=4} a_i b_j$ of partial products and
+confirm it fits a \lean{U128}. How much headroom remains? This number ---
+not elegance --- is why the invariant chose $2^{54}$.}
+
+\begin{checkpoint}
+You should now be able to: write the radix-51 denotation from memory; draw
+the commuting square and label which side owns bounds and \lean{Result}s;
+explain why many-to-one representation is both the performance trick and
+the bug habitat; and recognize the two-clause shape (bounds propagation +
+value equation) as the universal skeleton of implementation-correctness
+theorems.
+\end{checkpoint}

@@ -1,0 +1,161 @@
+\chapter{Verifying a Field: The Full Campaign}
+\label{ch:field}
+
+\section{The summit statement}
+
+Every thread so far --- specs as types, tactics, automation, $\Fp$,
+primality, extraction, denotation --- was preparation for one theorem. In
+the companion repositories it is called the \emph{field implementation
+certificate}, and (lightly paraphrased) it says:
+
+\begin{lstlisting}[language=Lean]
+theorem fieldImplementation :
+    -- p is prime, so ZMod p is genuinely a field
+    Nat.Prime p
+    -- and for all bounded limb arrays, every operation's
+    -- commuting square closes:
+  ∧ (∀ a b, Bnd a → Bnd b → AddSquare a b)
+  ∧ (∀ a b, Bnd a → Bnd b → SubSquare a b)
+  ∧ (∀ a b, Bnd a → Bnd b → MulSquare a b)
+  ∧ (∀ a,   Bnd a →         SquareSquare a)
+  ∧ (∀ a,   Bnd a →         InvertSquare a)   -- Fermat chain: a^(p-2)
+  ∧ ...                                       -- reduce, negate, encode
+\end{lstlisting}
+
+One theorem, kernel-checked, quantified over \emph{every} input the
+representation admits: the extracted dalek field arithmetic implements
+$\Fp$. This chapter is the story of the campaign that proves it --- told
+honestly, including the two places where the terrain fought back, because
+the failures teach more than the victories.
+
+\section{Order of battle}
+
+You do not prove such a conjunction by heroism; you prove it by sequencing.
+The campaign order in the real projects, and the reason for each position:
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{Bounds lemmas first} --- pure \lean{omega} facts about limb
+  sizes, no denotation at all. Cheap, and everything depends on them.
+\item \textbf{Primality} (Chapter~\ref{ch:prime}) --- independent of the
+  code entirely; it dignifies \lean{ZMod p} into a field.
+\item \textbf{add, sub, negate} --- linear operations; the commuting squares
+  close with \lean{omega} plus the denotation unfolds. Confidence builders.
+\item \textbf{reduce} --- the $\times 19$ fold in isolation. Proving it
+  alone, before mul uses it, halves the hardest proof's size.
+\item \textbf{mul, square} --- the boss fight of Chapter~\ref{ch:denotation}:
+  column sums, carries, folds. Squaring is mul with algebraic shortcuts ---
+  a separate code path in dalek, hence a separate theorem. No shortcuts
+  in the proof: the \emph{code's} shortcut is precisely what needs checking.
+\item \textbf{invert} --- the 254-squaring Fermat chain, verified as a
+  \lean{calc} of exponent bookkeeping on top of \code{mul}/\code{square}
+  specs, ending at $a^{p-2}$; Fermat's little theorem (Mathlib's) closes
+  the square.
+\end{enumerate}
+
+Notice the shape: \emph{each layer consumes only the specs of the layer
+below}, never reaching into implementations. By step 6 you are doing exponent
+arithmetic, blissfully ignorant of carries. That is the compositionality that
+Chapter~\ref{ch:denotation}'s two-clause specs (bounds + value) were designed
+to buy.
+
+\section{Dispatches from the terrain}
+
+\textbf{The wall that was really there.} Partway up, one proof style hit a
+genuine limit of the tool: correctness certificates for \code{mul}-scale
+goals, when handed to a general decision procedure in one monolithic call,
+generate internal certificates with coefficients on the order of $2^{256}$
+--- and checking them can exhaust the proof checker's memory. One such call,
+during the development of the Pasta field proofs, consumed twelve gigabytes
+and crashed the machine (Chapter~\ref{ch:automation} told you this story
+from the tactic side). The cure was never cleverness --- it was
+\emph{decomposition}: isolate each carry step as its own small lemma with a
+tiny context, prove the value identity with \lean{linear_combination}
+(a tactic that checks a \emph{stated} linear certificate rather than
+searching for one), and let the big theorem be an assembly of small
+checked parts. The same discipline, plus hard memory caps on the checker
+process, became house infrastructure.
+
+\begin{aha}
+There is a deep symmetry in that fix worth savoring: the \emph{proof} was
+restructured exactly the way the \emph{code} was --- into small steps with
+controlled intermediate size. Delayed carries in the implementation; small
+lemmas in the verification. Bounded limbs; bounded contexts. Good proofs and
+good fast code turn out to obey the same engineering aesthetics. This is not
+a coincidence; both are fighting combinatorial growth with structure.
+\end{aha}
+
+\textbf{Four forks, one method, real divergence.} The companion projects
+verify not just upstream \code{curve25519-dalek} but three production forks
+(Solana's, RISC~Zero's, Betrusted's) --- each against \emph{its own}
+extraction. Worth it? The audit found the forks implement the same
+constant-time conditional selection three different ways (a \code{subtle}
+crate trait, a volatile-read \code{black_box}, a hand-rolled arithmetic
+mask), and one fork reorders instructions in point doubling. All correct ---
+\emph{provably}, now --- but the divergence is exactly the kind of thing
+that silently breaks when someone ``harmonizes'' code during a rebase.
+Per-fork verification is not pedantry; it is how you notice that ``the same
+library'' isn't.
+
+\begin{pitfall}
+A verified fork is verified \emph{at a commit}. Change one line of
+arithmetic and the certificate is stale --- that is a feature (the proof
+\emph{should} break when the code changes), but it means verification is a
+\emph{process wired into maintenance}, not a trophy. The companion repos
+ship \code{check.sh} scripts that re-extract and re-verify from scratch;
+treat those as the project's pulse, not as CI decoration.
+\end{pitfall}
+
+\section{Reading a certificate like a professional}
+
+Suppose a stranger hands you a repository claiming ``formally verified
+field arithmetic.'' Chapter~\ref{ch:honesty} gives you the full audit
+protocol, but the field-layer questions you can already ask are these:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{What is denoted?} Find the denotation function. Does it map
+  the \emph{extracted} representation (good) or a hand-written lookalike
+  (Chapter~\ref{ch:rust}'s hole)?
+\item \textbf{Is the square complete?} Value equation \emph{and} bounds
+  propagation \emph{and} the \lean{.ok} clause --- a spec that assumes
+  success proves nothing about overflow.
+\item \textbf{Is the quantifier honest?} \lean{∀ a b} with bounds
+  hypotheses, or a handful of \lean{example}s on constants dressed up as
+  coverage?
+\item \textbf{Does anything say \lean{sorry}?} One \lean{sorry} anywhere in
+  the dependency chain and the certificate is decorative. The checker will
+  tell you; ask it.
+\end{itemize}
+
+\begin{tryit}
+Do the audit for real: open \code{dalek-ed25519-verified}, find the
+denotation, pick the \code{sub} spec, and check the three clauses against
+the list above. Then run the repo's \code{check.sh} and watch the whole
+pyramid rebuild. Total time: one coffee. Skill acquired: permanent.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Field subtraction in dalek computes $a - b$ as
+$a + (16p - b)$ limb-wise (adding a multiple of $p$ keeps limbs positive ---
+recall \lean{Nat} truncation!). State the commuting square for \code{sub}
+including the exact multiple-of-$p$ fact you would need as a lemma, and
+explain why $16p$ rather than $p$.}
+
+\exercise{The Fermat inversion chain computes $a^{p-2}$ via 254 squarings
+and 11 multiplications. Verify the exponent bookkeeping for the first three
+steps of dalek's actual chain: $a^2$, $a^{9} = (a^2)^{2\cdot 2} \cdot a$,
+$a^{11} = a^9 \cdot a^2$. (The full chain is exercise-by-induction: each
+step's exponent is a sum of previous ones --- addition-chain arithmetic.)}
+
+\exercise{(Discussion) Step 5 refuses to trust the squaring shortcut and
+verifies \code{square} separately from \code{mul}. A colleague argues
+``square is just \code{mul a a}, reuse the theorem.'' What, concretely,
+would that argument miss about the code under verification?}
+
+\begin{checkpoint}
+You should now be able to: state the field implementation certificate and
+every quantifier in it; recite the campaign order and justify why bounds
+and \code{reduce} come early; tell the memory-wall story and its
+decomposition moral; and audit a stranger's field-layer claim with four
+pointed questions.
+\end{checkpoint}

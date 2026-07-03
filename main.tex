@@ -1,0 +1,92 @@
+\documentclass[11pt]{report}
+\input{preamble}
+
+\begin{document}
+
+% ===================== TITLE PAGE =====================
+\begin{titlepage}
+\pagecolor{ink}\color{paper}
+\begin{tikzpicture}[remember picture,overlay]
+  % faint pyramid motif — the proof pyramid the book builds toward
+  \foreach \i/\w in {0/5.4, 1/4.2, 2/3.0, 3/1.8}{
+    \fill[paper,opacity=0.05] ($(current page.center)+(-\w/2,{-2.2+\i*0.95})$)
+      rectangle ++(\w,0.8);
+  }
+  \node[anchor=south west,paper,opacity=0.06,scale=6,font=\ttfamily]
+    at ($(current page.south west)+(0.5,0.4)$) {$\forall$};
+\end{tikzpicture}
+\vspace*{3.2cm}
+{\fontsize{15}{18}\selectfont\scshape\color{accent} a hands-on course in\par}
+\vspace{0.5cm}
+{\fontsize{40}{44}\selectfont\bfseries Verifying Cryptography\\[2pt] with Lean 4\par}
+\vspace{0.8cm}
+{\fontsize{15}{20}\selectfont\color{paper}
+From \code{1+1=2} to a machine-checked proof that\\ real elliptic-curve code is correct.\par}
+\vfill
+{\large\color{paper} A curriculum for the curious undergraduate ---\\
+no prior formal-verification or Lean experience assumed.\par}
+\vspace{0.8cm}
+{\color{ink2}\rule{\linewidth}{0.6pt}}
+\vspace{0.3cm}
+{\small\color{paper} Companion to the \code{*-ed25519-verified} and \code{pasta-pallas-verified}
+proof projects. \\ Every code snippet in this book runs. Every claim it makes about a proof, a proof assistant has checked.\par}
+\end{titlepage}
+\restoregeometry
+\pagecolor{paper}\color{ink}
+
+% ===================== HOW TO READ =====================
+\chapter*{How to read this book}
+\markboth{How to read this book}{}
+\addcontentsline{toc}{chapter}{How to read this book}
+
+You are about to learn one of the most powerful ideas in computer science: how
+to make a computer \emph{prove} that a program is correct --- not test it on a
+few inputs and hope, but establish, with the certainty of mathematics, that it
+does the right thing on \emph{every} input. We will aim that power at
+cryptography, where a single overlooked carry bit can quietly compromise every
+key a system ever generates.
+
+This book assumes you can program a little and remember a little high-school
+algebra. It assumes \textbf{nothing} about formal methods, proof assistants, or
+Lean. We start from \code{1 + 1 = 2} and end at a real, published,
+machine-checked proof that the field arithmetic behind Ed25519 --- the signature
+scheme in your SSH client, your phone, and half the internet --- is correct.
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{The colored boxes each mean one thing.} A coral
+  \emph{big idea} box holds the load-bearing concept of a section. A grey
+  \emph{try it} box is an invitation to run something yourself. An amber
+  \emph{pitfall} box is a trap with its warning sign. A green \emph{aha} box is
+  an intuition meant to click. A framed \emph{checkpoint} ends each chapter.
+  \item \textbf{Do the exercises.} Reading a proof is like watching someone
+  swim. You learn by getting in the water. Solutions are in the \code{solutions/}
+  folder, but consult them only after a real attempt.
+  \item \textbf{Everything runs.} The \code{exercises/} folder has Lean files you
+  can open and check. When the book says ``Lean accepts this,'' you can watch it
+  happen.
+\end{itemize}
+
+\begin{aha}
+The secret this book reveals: a proof is not a wall of Greek symbols meant to
+intimidate. A proof is a \emph{program} --- and a proof assistant is a very
+strict compiler for it. Once you see proofs as programs, the fear evaporates and
+the fun begins.
+\end{aha}
+
+\tableofcontents
+
+% ===================== CHAPTERS =====================
+\input{chapters/ch01-why-verify}
+\input{chapters/ch02-meet-lean}
+\input{chapters/ch03-propositions-as-types}
+\input{chapters/ch04-tactics}
+\input{chapters/ch05-numbers-and-automation}
+\input{chapters/ch06-modular-arithmetic}
+\input{chapters/ch07-primality-certificates}
+\input{chapters/ch08-rust-to-lean}
+\input{chapters/ch09-denotation-bridge}
+\input{chapters/ch10-verifying-a-field}
+\input{chapters/ch11-honesty-and-axioms}
+\input{chapters/ch12-the-pyramid}
+
+\end{document}

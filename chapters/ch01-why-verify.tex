@@ -1,0 +1,215 @@
+\chapter{Why Verify? The Bug That Testing Cannot Find}
+\label{ch:why}
+
+\section{A story about one carry bit}
+
+In 2014, researchers examining widely deployed elliptic-curve code found
+arithmetic bugs of a very particular species: the code was correct on
+\emph{almost every} input. Not most inputs --- almost all of them, in a
+precise sense. One famous example, a carry-propagation flaw in an
+implementation of curve25519 arithmetic, produced a wrong answer with
+probability on the order of $2^{-64}$ per random input.
+
+Pause on that number. If you tested this function a billion times per second,
+around the clock, you should expect to wait \emph{centuries} before a random
+test happens to catch the bug. Every unit test passes. Every integration test
+passes. Fuzzers shrug. The code ships.
+
+\begin{pitfall}
+``It passed all the tests'' means: it worked on the inputs we tried. For a
+32-bit function there are four billion inputs and exhaustive testing is
+feasible. A field element in Ed25519 is $255$ bits. The number of input
+\emph{pairs} to a two-argument field operation is about $10^{153}$ --- more
+than the square of the number of atoms in the observable universe. Testing
+samples a raindrop from that ocean.
+\end{pitfall}
+
+Why does cryptographic code have bugs of exactly this shape? Because of how it
+must be written. To be fast and resistant to timing attacks, real
+implementations represent a 255-bit number in several machine-word
+\emph{limbs} (we will spend happy hours with limbs in
+Chapter~\ref{ch:denotation}) and postpone expensive carry propagation as long
+as possible. The rare inputs where a deferred carry finally overflows are
+precisely the inputs no test generator stumbles on. The bug lives in the gap
+between ``the arithmetic we meant'' and ``the arithmetic we wrote,'' and that
+gap is only visible on a set of inputs of measure nearly zero.
+
+And in cryptography, ``rare wrong answer'' does not mean ``rare small
+glitch.'' Wrong field arithmetic can leak private keys: several published
+attacks turn a single faulty group operation into full key recovery. The
+stakes are not a corrupted pixel; they are every signature your machine has
+ever made.
+
+\section{There is another way}
+
+What if, instead of sampling inputs, we could make a statement about
+\emph{all} of them --- and have a machine check that statement with the same
+rigor a compiler checks syntax?
+
+\begin{bigidea}
+A \textbf{formal proof of correctness} is a mathematical argument, written in
+a language precise enough for a computer to verify, that a program satisfies
+its specification on \emph{every} input. Not sampled. Not probabilistic.
+Every input, forever, or the proof does not check.
+\end{bigidea}
+
+The tool that checks such arguments is called a \emph{proof assistant}. This
+book uses \textbf{Lean~4}, a modern proof assistant that is also a
+full-fledged programming language. Others you may have heard of: Rocq
+(formerly Coq), Isabelle/HOL, Agda. The ideas transfer; the syntax differs.
+
+A proof assistant is built around a small, paranoid core called the
+\emph{kernel}. Everything you will learn in this book --- clever tactics,
+powerful automation, beautiful notation --- is scaffolding whose only job is
+to produce a proof object the kernel accepts. The kernel is a few thousand
+lines of code that does one thing: check that each step of a proof follows
+from the previous ones by a fixed set of rules. If the kernel accepts, the
+theorem holds. If it does not, no amount of confidence, seniority, or good
+intentions makes the program correct.
+
+\begin{aha}
+Here is the emotional core of formal verification, and it is worth
+internalizing early: \textbf{the proof assistant is not your examiner, it is
+your collaborator}. It never gets tired, never skips a case, never says
+``obviously.'' Every hour you spend arguing with it is an hour a bug did not
+survive. People who love proof assistants love them the way climbers love a
+good belayer.
+\end{aha}
+
+\section{What we will actually verify}
+
+This book is not a tour of toy examples. It is the curriculum companion to a
+set of real verification projects in which the arithmetic core of
+\textbf{Ed25519} --- the elliptic-curve signature scheme used by SSH, Signal,
+TLS, and most cryptocurrency systems --- was machine-checked in Lean~4,
+starting from the actual Rust source code of the
+\code{curve25519-dalek} library and several of its production forks.
+
+The proofs are organized as a pyramid. Each layer states the correctness of
+one abstraction level and rests on the layer beneath it:
+
+\begin{center}
+\begin{tikzpicture}[
+  lay/.style={draw=ink2,thick,rounded corners=2pt,align=center,minimum height=0.95cm},
+  note/.style={font=\small\color{ink2},align=left,anchor=west}
+]
+  \node[lay,fill=accentsoft,minimum width=2.8cm]  (sig) at (0,3.45) {\textbf{Signature}\\[-2pt]\small EdDSA verify};
+  \node[lay,fill=warnsoft,minimum width=5.2cm]    (sca) at (0,2.3)  {\textbf{Scalar arithmetic mod $\boldsymbol{\ell}$}};
+  \node[lay,fill=provensoft,minimum width=7.6cm]  (grp) at (0,1.15) {\textbf{Group law} \small (twisted Edwards points)};
+  \node[lay,fill=codebg,minimum width=10cm]       (fld) at (0,0)    {\textbf{Field arithmetic in $\Fp$}, \small $p = 2^{255}-19$};
+  \node[note] at (5.6,0)    {limbs, carries, multiplication};
+  \node[note] at (5.6,1.15) {point addition is complete \& correct};
+  \node[note] at (5.6,2.3)  {the group order $\ell$, reduction};
+  \node[note] at (5.6,3.45) {the equation $8sB = 8R + 8kA$};
+\end{tikzpicture}
+\end{center}
+
+By the end of this book you will be able to read --- and extend --- the real
+proofs at every layer of this pyramid. The journey looks like this:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Chapters 2--5} teach Lean itself, from \code{\#eval 1+1} to
+  proofs by induction and the automation that dispatches arithmetic goals.
+\item \textbf{Chapters 6--7} build the mathematics: modular arithmetic, finite
+  fields, and how to convince a paranoid kernel that a 77-digit number is
+  prime.
+\item \textbf{Chapters 8--9} cross the bridge from Rust to Lean: how real
+  code is translated into a form we can reason about, and the single most
+  important idea in the whole enterprise --- the \emph{denotation function}.
+\item \textbf{Chapters 10--12} assemble the pyramid: field correctness, the
+  ethics of axioms and honest boundaries, and the layers above.
+\end{itemize}
+
+\section{Proofs versus tests: the honest comparison}
+
+Formal verification is not magic, and this book will never pretend otherwise.
+It is worth being precise, right now, about what a machine-checked proof does
+and does not give you.
+
+\begin{center}
+\begin{tabular}{@{}p{0.44\linewidth}p{0.48\linewidth}@{}}
+\toprule
+\textbf{Testing} & \textbf{Proving} \\
+\midrule
+Checks sampled inputs & Checks \emph{all} inputs \\
+Cheap to start, cheap to run & Expensive to write, cheap to re-check \\
+Finds bugs & Establishes their absence (w.r.t.\ the spec) \\
+Trusts nothing & Trusts the spec, the model, the kernel \\
+Silent about \emph{why} code is right & The proof \emph{is} the why \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+That word \emph{spec} in the right column is the fine print, and it matters
+enormously. A proof shows that code satisfies a specification. If the
+specification says the wrong thing --- or says nothing, or is accidentally
+trivial --- the proof is worthless no matter how green the checkmark. A
+recurring theme of this book (it gets its own chapter,
+Chapter~\ref{ch:honesty}) is how to read a verification claim skeptically:
+What exactly was proven? Against which model of the code? Resting on which
+axioms?
+
+\begin{aha}
+The most dangerous artifact in formal methods is not a wrong proof --- the
+kernel prevents those. It is a \emph{correct proof of the wrong statement}.
+Learning to smell those is as important as learning to write proofs at all.
+\end{aha}
+
+\section{Why Lean, and why now}
+
+Twenty years ago, verifying real cryptographic C or Rust code was a heroic,
+multi-year effort. Three things changed:
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{Proof assistants matured.} Lean~4 is fast, pleasant, and comes
+  with \emph{Mathlib}, a library of over a million lines of formalized
+  mathematics --- finite fields and elliptic-curve ingredients included, so we
+  do not start from bare axioms.
+\item \textbf{Translation pipelines appeared.} Tools like \emph{Charon} and
+  \emph{Aeneas} mechanically translate real Rust code into Lean definitions,
+  so the thing we verify is derived from the code that ships, not a
+  hand-transcribed approximation (Chapter~\ref{ch:rust}).
+\item \textbf{Automation got serious.} Decision procedures like \lean{omega}
+  (linear integer arithmetic) and \lean{decide} discharge the boring 90\% of
+  goals, leaving humans the interesting 10\%.
+\end{enumerate}
+
+None of this made verification \emph{easy}. It made verification
+\emph{possible for a well-prepared person in finite time} --- and preparing
+you is exactly what this book is for.
+
+\begin{tryit}
+You do not need anything installed yet, but if you want to run code from
+Chapter~2 onward, install Lean now. One command:
+\begin{lstlisting}
+curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
+\end{lstlisting}
+Then open the \code{exercises/} folder of this repository in VS~Code with the
+\emph{Lean 4} extension. The orange progress bar you will see is the proof
+checker working through the file --- your new collaborator saying hello.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{A function takes two 255-bit inputs and is buggy on exactly one
+input pair. Assume you can test $10^{9}$ random pairs per second. Estimate the
+expected time to find the bug by random testing, in multiples of the age of
+the universe ($\approx 4\times10^{17}$ seconds). You may approximate freely;
+the point is the order of magnitude.}
+
+\exercise{Give an example, from your own programming experience, of a bug that
+survived a test suite. What property would a specification have needed to
+state in order to exclude it?}
+
+\exercise{(Discussion) A colleague says: ``Our crypto library is audited by
+three firms every year; formal verification is redundant.'' Name one class of
+defect audits are better at than proofs, and one class where proofs are
+strictly stronger.}
+
+\begin{checkpoint}
+Before moving on, you should be able to explain to a friend:
+(1) why testing fundamentally cannot establish correctness of a 255-bit
+arithmetic function; (2) what a proof assistant's kernel is and why its small
+size matters; (3) what a proof of correctness actually promises --- and the
+role the specification plays in that promise.
+\end{checkpoint}

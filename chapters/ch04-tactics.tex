@@ -1,0 +1,194 @@
+\chapter{Tactics: Proving as a Dialogue}
+\label{ch:tactics}
+
+\section{From programs to conversations}
+
+Writing proofs as raw programs, as in Chapter~\ref{ch:pat}, is honest work,
+but it scales badly: a real correctness proof for field multiplication would
+be a program the size of a small compiler. Nobody writes those by hand.
+Instead, Lean offers \emph{tactic mode}: an interactive dialogue where you
+issue commands and Lean builds the proof program for you, step by step,
+showing you the remaining work after each move.
+
+You enter the dialogue with the keyword \lean{by}:
+
+\begin{lstlisting}[language=Lean]
+theorem and_swap (P Q : Prop) : P ∧ Q → Q ∧ P := by
+  intro h
+  constructor
+  · exact h.2
+  · exact h.1
+\end{lstlisting}
+
+Place your cursor after \lean{by} in the editor and Lean shows the
+\textbf{goal state} --- the exact logical situation at that point:
+
+\begin{lstlisting}
+P Q : Prop
+⊢ P ∧ Q → Q ∧ P
+\end{lstlisting}
+
+Everything above the turnstile \(\vdash\) is what you \emph{have} (the
+context); the line after it is what you \emph{owe} (the goal). Every tactic
+transforms this picture. After \lean{intro h}, the hypothesis moves above the
+line; after \lean{constructor}, the goal splits in two. Proving becomes a
+game whose board you can always see.
+
+\begin{bigidea}
+A tactic proof is a \textbf{recorded conversation with the goal state}. The
+skill of proving is not memorizing tactic names --- it is learning to
+\emph{read the goal state} and recognize which of a handful of moves makes it
+simpler. Below is the core vocabulary; it covers the vast majority of every
+proof in the real Ed25519 development.
+\end{bigidea}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Tactic} & \textbf{When the goal looks like...} & \textbf{Effect} \\
+\midrule
+\lean{intro h}   & \lean{P → Q}, \ \lean{∀ x, P x} & assume it; name the evidence \\
+\lean{exact e}   & anything      & finish: \lean{e} is a proof of the goal \\
+\lean{apply f}   & \lean{Q}, given \lean{f : P → Q} & reduce the goal to \lean{P} \\
+\lean{constructor} & \lean{P ∧ Q}, \lean{P ↔ Q}, ... & split into pieces \\
+\lean{cases h}   & have \lean{h : P ∨ Q} (or \(\wedge\), \lean{∃}) & case analysis on \lean{h} \\
+\lean{rw [eq]}   & contains a rewritable subterm & replace using equation \lean{eq} \\
+\lean{simp}      & simplifiable clutter & rewrite with a lemma database \\
+\lean{induction n} & \lean{∀ n : Nat, ...} & base case + inductive step \\
+\lean{rfl}       & \lean{a = a} after computation & close by computation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Rewriting: equality as a tool}
+
+The workhorse tactic of equational reasoning is \lean{rw} (rewrite). Given a
+proven equation, it replaces one side by the other inside your goal:
+
+\begin{lstlisting}[language=Lean]
+example (a b : Nat) (h : a = b) : a + a = b + b := by
+  rw [h]      -- goal becomes: b + b = b + b, closed by rfl automatically
+\end{lstlisting}
+
+Chains of rewrites read like the two-column proofs of school geometry,
+except a machine checks every line. Here is commutativity-and-associativity
+shuffling, Mathlib lemmas by name:
+
+\begin{lstlisting}[language=Lean]
+example (a b c : Nat) : a + b + c = c + b + a := by
+  rw [Nat.add_comm a b]        -- b + a + c = c + b + a
+  rw [Nat.add_assoc]           -- b + (a + c) = c + b + a
+  rw [Nat.add_comm a c]        -- b + (c + a) = c + b + a
+  rw [← Nat.add_assoc]         -- b + c + a = c + b + a
+  rw [Nat.add_comm b c]        -- done
+\end{lstlisting}
+
+The arrow \(\leftarrow\) rewrites right-to-left. Nobody enjoys writing five-line
+shuffles like this, which is exactly why Chapter~\ref{ch:automation}
+introduces \lean{ring} --- but you must \emph{once} feel the manual version to
+understand what the automation is doing on your behalf.
+
+\section{Induction: the tactic that conquers infinity}
+
+Remember the embarrassment of Chapter~\ref{ch:pat}: \lean{0 + n = n} does not
+hold by computation. Now we can prove it --- by induction, the proof
+technique that inductive types were born for:
+
+\begin{lstlisting}[language=Lean]
+theorem zero_add (n : Nat) : 0 + n = n := by
+  induction n with
+  | zero      => rfl                -- 0 + 0 = 0: computes
+  | succ k ih => rw [Nat.add_succ, ih]
+\end{lstlisting}
+
+The \lean{induction} tactic converts a statement about \emph{all} naturals
+into two finite obligations: the statement for \lean{zero}, and the statement
+for \lean{succ k} \emph{assuming it for} \lean{k} (the induction hypothesis
+\lean{ih}). Because every natural number is built from those two
+constructors, the two cases cover infinity.
+
+\begin{aha}
+Induction is not a new axiom to swallow --- it falls out of the inductive
+definition of \lean{Nat} itself. ``Every \lean{Nat} is \lean{zero} or a
+\lean{succ}'' \emph{is} the license to do case analysis; recursion on the
+structure \emph{is} the induction. Data and proof principle are two views of
+the same declaration. This is Curry--Howard paying rent again.
+\end{aha}
+
+\begin{pitfall}
+When a proof gets stuck, resist the urge to try random tactics --- the
+formal-methods equivalent of mashing buttons. The goal state is telling you
+something. Three honest questions unstick most situations: (1)~Is the
+statement actually true as written --- check a small example with
+\lean{\#eval}! (2)~Am I missing a hypothesis --- is there an unstated bound or
+nonzero condition? (3)~Is my induction on the right variable? In the real
+projects behind this book, ``the proof is stuck'' was, more often than not,
+the \emph{statement} being subtly wrong --- a truncated subtraction, a missing
+bound. The proof assistant was the messenger.
+\end{pitfall}
+
+\section{Structuring real proofs: \texttt{have} and \texttt{calc}}
+
+Big proofs are not flat lists of tactics; they are structured arguments with
+named intermediate results. The \lean{have} tactic states and proves a
+stepping stone; \lean{calc} lays out a chain of equalities or inequalities
+the way you would on a whiteboard:
+
+\begin{lstlisting}[language=Lean]
+example (a b : Nat) (h : a = 2 * b) : a + a = 4 * b := by
+  have h2 : a + a = 2 * a := by rw [Nat.two_mul]
+  calc a + a = 2 * a       := h2
+       _     = 2 * (2 * b) := by rw [h]
+       _     = 4 * b       := by rw [← Nat.mul_assoc]
+\end{lstlisting}
+
+This style is not cosmetic. In the verified field arithmetic you will read
+later, a single multiplication correctness proof is a \lean{calc} chain
+tracking limb products through carries --- dozens of steps, each trivial,
+whose \emph{composition} is the theorem. \lean{have} and \lean{calc} are how
+proofs stay readable at that scale; they are also how they stay
+\emph{maintainable}, because a broken step localizes the damage to one line.
+
+There is one more structuring fact worth knowing early, because it saved the
+real project from a crash-course (literally --- see
+Chapter~\ref{ch:honesty}): breaking a proof into small named \lean{have}
+steps also controls the proof assistant's \emph{memory appetite}. A monolithic
+``figure it all out at once'' tactic call over a huge context can consume
+gigabytes; ten targeted steps, pennies each, prove the same thing. Structure
+is not just style --- it is engineering.
+
+\begin{tryit}
+Open \code{exercises/Ch04.lean}. It sets up each theorem with the goal state
+drawn in a comment, then asks you to: prove \lean{and_swap} in tactic mode;
+prove \lean{zero_add} \emph{without} peeking above; and repair a broken
+\lean{calc} chain in which exactly one step is wrong. The third
+exercise is secretly the most realistic job training in this book.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Prove by induction: \lean{∀ n : Nat, n + 0 = n} and
+\lean{∀ n m : Nat, n + succ m = succ (n + m)}. (These are the mirror images
+of the definitional equations --- the ones computation gives you for free ---
+and together they yield commutativity.)}
+
+\exercise{Using the previous exercise, prove
+\lean{∀ n m : Nat, n + m = m + n} by induction on \lean{m}. Write out, in
+one prose sentence per case, what each branch of your proof says.}
+
+\exercise{Prove \lean{∀ n : Nat, 2 * n = n + n} twice: once with
+\lean{induction}, once with a single \lean{rw} using a Mathlib lemma you find
+yourself (search hint: \lean{exact?} asks Lean to search for you).}
+
+\exercise{(Reading) In the goal state
+\lean{h : a < 2\textasciicircum{}51 ⊢ a * 19 < 2\textasciicircum{}56}, no induction is needed --- this is pure
+arithmetic. Which tactic from the table would you \emph{guess} handles it?
+(Answer next chapter; your guess is the point.)}
+
+\begin{checkpoint}
+You should now be able to: read a goal state (context, turnstile, goal);
+drive the core tactics \lean{intro}, \lean{exact}, \lean{apply},
+\lean{cases}, \lean{rw}, \lean{induction}; structure a multi-step argument
+with \lean{have} and \lean{calc}; and --- most importantly --- when stuck,
+interrogate the \emph{statement} before blaming the proof.
+\end{checkpoint}

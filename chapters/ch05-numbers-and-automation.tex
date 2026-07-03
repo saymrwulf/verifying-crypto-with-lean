@@ -1,0 +1,186 @@
+\chapter{Numbers and Automation: Making the Machine Do the Boring Parts}
+\label{ch:automation}
+
+\section{The 90/10 rule of verification}
+
+Here is a trade secret: most of a real verification effort is not clever.
+Opening the correctness proof of Ed25519 field multiplication, you will find
+that the overwhelming majority of proof obligations are statements like
+
+\[
+a < 2^{51} \;\wedge\; b < 2^{51} \;\Longrightarrow\; a + b < 2^{52},
+\qquad\qquad
+(a + b) \cdot c = a\cdot c + b\cdot c,
+\]
+
+--- bookkeeping a patient undergraduate could verify by hand in a minute
+each. There are \emph{thousands} of them. The craft of modern verification is
+to hand exactly this 90\% to decision procedures --- tactics that implement a
+complete algorithm for a well-defined logical fragment --- and save the human
+for the 10\% that needs insight. This chapter is your tour of the arsenal.
+
+\section{\texttt{omega}: linear arithmetic, decided}
+
+The tactic you will use more than any other in this book's domain is
+\lean{omega}. It completely decides \emph{linear arithmetic} over integers
+and naturals: any goal built from variables, constants, $+$, $-$,
+multiplication \emph{by constants}, $=$, $<$, $\le$, $\lnot$, $\wedge$,
+$\vee$, including the hypotheses in context.
+
+\begin{lstlisting}[language=Lean]
+example (a b : Nat) (h1 : a < 2^51) (h2 : b < 2^51) :
+    a + b < 2^52 := by omega
+
+example (a b : Nat) (h : a ≤ b) : a + (b - a) = b := by omega
+  -- note: truncated Nat subtraction handled CORRECTLY -- omega knows
+\end{lstlisting}
+
+That second example deserves a salute: \lean{omega} understands \lean{Nat}
+truncation natively, defusing the Chapter~\ref{ch:lean} pitfall by algorithm
+rather than by vigilance. When the goal is false, \lean{omega} \emph{fails} ---
+it is a decision procedure, so failure on a linear goal means the goal (with
+the hypotheses in view) is simply not true. That property turns \lean{omega}
+into a \emph{statement-debugging} tool: if it refuses your ``obviously true''
+bound, go find the counterexample; there is one.
+
+\begin{pitfall}
+\lean{omega} does not touch multiplication of two \emph{variables}
+($a \cdot b$ is not linear), division in general, or bit-shifts by variables.
+For a goal mixing $a \cdot b$ with bounds, you often first name the product
+--- \lean{have hab : a * b ≤ 2\textasciicircum{}102 := ...} using a multiplication
+monotonicity lemma --- and then let \lean{omega} finish with \lean{hab} as an
+opaque atom. This two-step, \emph{bound the nonlinear part, then release the
+linear solver}, is the single most-used proof pattern in verified field
+arithmetic. You will write it dozens of times, and by Chapter~\ref{ch:field}
+it will feel like breathing.
+\end{pitfall}
+
+\section{\texttt{decide}: when truth is a computation}
+
+Some propositions can be checked by running an algorithm to completion:
+``$97$ is prime,'' ``these two sorted lists are equal,'' ``$x^3 = x$ for all
+$x$ in $\Zmod{6}$'' (six cases --- check them all). For any such
+\emph{decidable} proposition, the \lean{decide} tactic runs the decision
+algorithm inside Lean's kernel and turns the answer into a proof:
+
+\begin{lstlisting}[language=Lean]
+example : Nat.Prime 97 := by decide
+example : ∀ x : ZMod 6, x^3 = x^3 := by decide   -- finite: try all six
+\end{lstlisting}
+
+The magic and the limitation are the same fact: the \emph{kernel itself}
+re-executes the computation. That makes \lean{decide} unimpeachable --- and
+completely hopeless for our 77-digit prime $2^{255}-19$, where trial division
+would outlast the universe. There is a variant, \lean{native_decide}, that
+compiles the check to native code first --- fast enough! --- but it makes the
+compiler part of your trusted base, an IOU we will scrutinize hard in
+Chapters~\ref{ch:prime} and~\ref{ch:honesty}. For now, the rule of the house:
+\textbf{\lean{decide} yes, \lean{native_decide} never in a final certificate.}
+
+\section{\texttt{ring} and \texttt{norm\_num}: algebra on tap}
+
+The five-line commutativity shuffle from Chapter~\ref{ch:tactics}? Here is
+the grown-up version:
+
+\begin{lstlisting}[language=Lean]
+example (a b c : Nat) : a + b + c = c + b + a := by ring
+
+example (a b : ZMod p) : (a + b)^2 = a^2 + 2*a*b + b^2 := by ring
+
+example : (2:Int)^255 - 19 > 2^254 := by norm_num
+\end{lstlisting}
+
+\lean{ring} proves any identity that holds in every commutative ring ---
+polynomial rearrangements, binomial expansions, distributivity avalanches ---
+by normalizing both sides to a canonical polynomial form and comparing.
+\lean{norm_num} evaluates concrete numeric facts, comfortable with numbers of
+any size. Between \lean{omega}, \lean{ring}, and \lean{norm_num} you now hold
+the three keys that open most arithmetic doors:
+
+\begin{center}
+\begin{tikzpicture}[
+  key/.style={draw=ink2,thick,rounded corners=3pt,fill=white,align=center,
+              minimum width=3.55cm,minimum height=1.5cm},
+]
+  \node[key,fill=accentsoft] (o) at (0,0)
+    {\textbf{\code{omega}}\\[1pt]\small linear $+,-,<,\le$\\\small bounds \& carries};
+  \node[key,fill=provensoft] (r) at (4.1,0)
+    {\textbf{\code{ring}}\\[1pt]\small polynomial identities\\\small in any comm.\ ring};
+  \node[key,fill=warnsoft] (n) at (8.2,0)
+    {\textbf{\code{norm\_num}}\\[1pt]\small concrete numerals\\\small any size};
+  \node[font=\small\color{ink2},align=center] at (4.1,-1.55)
+    {the three keys of verified arithmetic --- learn what each fragment
+     \emph{excludes}\\ and you will always know which door you are standing in front of};
+\end{tikzpicture}
+\end{center}
+
+\section{\texttt{simp}: the rewriting engine, and how to hold it}
+
+\lean{simp} rewrites the goal to exhaustion using a curated database of
+thousands of ``simplification'' lemmas ($x + 0 \rightsquigarrow x$,
+\lean{List.length (a :: l)} $\rightsquigarrow$ \lean{l.length + 1}, ...). It
+is the most powerful tactic in Lean and the easiest to misuse. Used well, it
+clears brush so the real argument stands out. Used lazily ---
+\lean{simp [*]} with every hypothesis thrown in, in a context of sixty
+accumulated facts --- it becomes a search over an enormous rewrite space:
+slow, fragile under library updates, and occasionally a memory monster.
+
+This is not hypothetical. During the development this book accompanies, a
+single over-broad \lean{simp}-style discharge in a fat context consumed
+twelve gigabytes of RAM and took down the machine. The postmortem produced
+house rules worth adopting from day one:
+
+\begin{itemize}[leftmargin=1.4em]
+\item Prefer \lean{simp only [lemma1, lemma2]} --- an explicit lemma list ---
+  in anything you intend to keep.
+\item Let \lean{simp?} tell you the list: run it once interactively, then
+  paste the \lean{simp only [...]} it suggests into the file.
+\item Keep contexts lean (pun intended): a proof with sixty hypotheses in
+  scope wants to be five \lean{have}-steps with twelve each.
+\end{itemize}
+
+\begin{bigidea}
+Automation is a \emph{contract}, not a slot machine. Each tactic decides a
+known fragment: \lean{omega} linear arithmetic, \lean{ring} ring identities,
+\lean{decide} finite computation, \lean{simp only} a rewrite system you
+chose. The professional habit is to know \emph{which} contract you are
+invoking --- then failure is information (``this goal is not linear''; ``this
+identity needs the modulus''), never mystery.
+\end{bigidea}
+
+\begin{tryit}
+Open \code{exercises/Ch05.lean}: ten arithmetic goals, each solvable by
+exactly one of \lean{omega} / \lean{ring} / \lean{norm_num} / \lean{decide}.
+Your task is not just to close them but to close each with the \emph{right}
+tool --- the file rejects overkill by design. Goal number ten is the
+Chapter~\ref{ch:tactics} cliffhanger:
+\lean{a < 2\textasciicircum{}51 → a * 19 < 2\textasciicircum{}56}. (It is not linear --- $19$ is a constant, so
+it is! Think, then fire.)
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{For each, name the tactic and predict success before running:
+(a) \lean{(a+b)*(a-b) = a*a - b*b} over \lean{Int};
+(b) \lean{a < 100 → b < 100 → a*b < 10000} over \lean{Nat};
+(c) \lean{Nat.Prime 65537};
+(d) \lean{2\textasciicircum{}51 + 2\textasciicircum{}51 = 2\textasciicircum{}52}.}
+
+\exercise{Goal (b) above is nonlinear, yet \lean{omega} alone fails while the
+two-step pattern (bound the product with
+\lean{Nat.mul_lt_mul} machinery, then \lean{omega}) succeeds. Carry it out.
+Time yourself; the pattern should take under five minutes by the second
+attempt.}
+
+\exercise{Find a true statement about \lean{Nat} that \emph{no} tactic in
+this chapter proves in one shot, and sketch in prose how you would decompose
+it. (Anything genuinely inductive works --- automation here decides
+arithmetic fragments, not all of mathematics.)}
+
+\begin{checkpoint}
+You should now be able to: match a goal to its decision procedure by the
+shape of its operators; execute the bound-then-omega pattern for nonlinear
+bounds; explain why \lean{decide} is trustworthy and where it hits its
+computational wall; and state the \lean{simp} discipline --- and the story of
+why this book is unusually sincere about it.
+\end{checkpoint}

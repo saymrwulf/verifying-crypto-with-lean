@@ -1,0 +1,208 @@
+\chapter{Propositions as Types: The Idea That Makes It All Work}
+\label{ch:pat}
+
+\section{A suspicious similarity}
+
+Here are two things that look unrelated. First, a function that converts a
+pair into something else:
+
+\begin{lstlisting}[language=Lean]
+def swap (pair : A x B) : B x A := (pair.2, pair.1)
+\end{lstlisting}
+
+Second, a fact of logic: \emph{if $A$ and $B$ both hold, then $B$ and $A$ both
+hold.} To prove it, you would say: ``suppose I have evidence for $A$ and
+evidence for $B$; then I can produce evidence for $B$ and evidence for $A$ ---
+just present the same two pieces in the other order.''
+
+That prose proof and that program are the \emph{same object}. The function
+takes a pair of values and reorders it; the proof takes a pair of pieces of
+evidence and reorders it. This is not an analogy or a teaching trick. It is a
+theorem about logic and computation, discovered independently by logicians
+(Curry, Howard) and now the load-bearing wall of Lean:
+
+\begin{bigidea}
+\textbf{The Curry--Howard correspondence.} A proposition can be read as a
+type --- the type of its proofs. A proof is then simply a \emph{program} of
+that type. Checking a proof is type-checking a program. There is no separate
+``proof checker'' bolted onto Lean: the type checker you met in
+Chapter~\ref{ch:lean} \emph{is} the proof checker.
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Logic} & \textbf{Programming} & \textbf{In Lean} \\
+\midrule
+proposition $P$        & type            & \lean{P : Prop} \\
+proof of $P$           & value/program of that type & \lean{h : P} \\
+$P \to Q$ (implication)& function type   & \lean{P -> Q} \\
+$P \land Q$ (and)      & pair type       & \lean{P /\ Q} \\
+$P \lor Q$ (or)        & tagged union    & \lean{P \/ Q} \\
+$\lnot P$ (not)        & \lean{P -> False} & \lean{Not P} \\
+``true''               & type with one trivial value & \lean{True} \\
+``false''              & \emph{empty} type & \lean{False} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{bigidea}
+
+Take a minute with the last row: \lean{False} is a type with \emph{no
+constructors} --- no way to build a value. To prove a false statement you
+would have to produce an inhabitant of an empty type. That is why the system
+is sound: lies have no evidence, so lies do not type-check.
+
+\section{Proofs are programs: first proofs}
+
+Let us write actual proofs as actual programs. Implication is a function
+type, so proving ``$P$ implies $P$'' means writing the identity function:
+
+\begin{lstlisting}[language=Lean]
+theorem p_implies_p (P : Prop) : P -> P :=
+  fun h => h
+\end{lstlisting}
+
+Read \lean{fun h => h} aloud as a proof: ``assume $P$ holds --- call the
+evidence $h$; then $P$ holds, by $h$.'' Every classical proof-writing phrase
+has a program shape:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{You say in prose} & \textbf{You write in Lean} \\
+\midrule
+``Assume $P$; call it $h$''       & \lean{fun h => ...} \\
+``By hypothesis $h$''             & \lean{h} \\
+``Apply lemma $f$ to fact $h$''   & \lean{f h} \\
+``Both parts hold: ... and ...''  & \lean{And.intro pf1 pf2} \\
+``From $h : P \land Q$, the first part'' & \lean{h.1} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The pair-swapping example, now as an official theorem:
+
+\begin{lstlisting}[language=Lean]
+theorem and_swap (P Q : Prop) : P /\ Q -> Q /\ P :=
+  fun h => And.intro h.2 h.1
+\end{lstlisting}
+
+And transitivity of implication is exactly function composition:
+
+\begin{lstlisting}[language=Lean]
+theorem imp_trans (P Q R : Prop) : (P -> Q) -> (Q -> R) -> (P -> R) :=
+  fun pq qr => fun p => qr (pq p)
+\end{lstlisting}
+
+\begin{aha}
+If you have ever composed two functions, you have already done everything
+this proof does. The intimidating part of formal logic --- ``natural
+deduction,'' ``inference rules'' --- turns out to be the part you knew from
+programming all along. What logicians call \emph{modus ponens}, you call
+\emph{calling a function}.
+\end{aha}
+
+\section{Equality and the proof that \texorpdfstring{$1+1=2$}{1+1=2}}
+
+The proposition $a = b$ is also a type. Its only constructor is reflexivity
+--- \lean{rfl} --- which proves \lean{a = a}. How can that ever prove
+anything interesting? Because Lean \emph{computes} before comparing:
+
+\begin{lstlisting}[language=Lean]
+theorem one_plus_one : 1 + 1 = 2 := rfl
+\end{lstlisting}
+
+Lean unfolds \lean{1 + 1} using the two-line definition of addition from
+Chapter~\ref{ch:lean}, arrives at \lean{2}, and sees that both sides are
+\emph{literally the same value}. The equation holds by computation. This
+mechanism --- \emph{definitional equality} --- is the engine that lets proofs
+lean on programs, and later lets us prove facts about extracted Rust code by,
+in part, just running it symbolically.
+
+\begin{pitfall}
+\lean{rfl} proves $2^{255} - 19$-sized computations happily, but it can only
+prove what computation alone can see. \lean{n + 0 = n} is \lean{rfl} (the
+definition's first equation matches), yet \lean{0 + n = n} is \emph{not} ---
+recursion is on the \emph{second} argument, and \lean{n} is an opaque
+variable, so nothing unfolds. The statement is still true; it just needs a
+real proof (induction --- next chapter). The asymmetry feels unfair for about
+a day. Then it becomes your sharpest mental model of what a computer can and
+cannot know for free.
+\end{pitfall}
+
+\section{Universals, existentials, and dependent types}
+
+Cryptographic specifications are universal statements: ``\emph{for all}
+inputs, the output is correct.'' In Lean, $\forall$ is a function type whose
+\emph{result type mentions the argument}:
+
+\begin{lstlisting}[language=Lean]
+theorem add_self_even : forall n : Nat, isEven (n + n) = true := ...
+\end{lstlisting}
+
+A proof of \lean{forall n, P n} is a function that eats any \lean{n} and
+returns a proof of \lean{P n} --- one uniform recipe covering all the
+infinitely many cases at once. This is precisely the thing testing could not
+give us in Chapter~\ref{ch:why}: testing produces finitely many
+\lean{P 3, P 17, P 42}; a proof produces the function.
+
+Dually, \lean{exists n, P n} is proved by handing over a concrete witness
+together with evidence: \lean{Exists.intro 4 pf}. And remember the
+\lean{Rational} exercise from last chapter --- the denominator you could not
+keep nonzero? Dependent types fix it by letting data carry proofs:
+
+\begin{lstlisting}[language=Lean]
+structure Rational where
+  num   : Int
+  den   : Nat
+  den_ne_zero : den ≠ 0    -- a PROOF, stored inside the value
+\end{lstlisting}
+
+No value of this type with a zero denominator can ever be constructed,
+anywhere, by anyone. In the real Ed25519 development this exact pattern
+appears as a \emph{bounds invariant}: a field element travels together with
+the proof that its five limbs are small enough not to overflow the next
+multiplication. The data structure makes the unsafe states unrepresentable.
+
+\section{What about proof by contradiction?}
+
+One more resident of the logical zoo. Lean's core logic is
+\emph{constructive}: a proof of existence builds a witness. Classical
+reasoning --- ``it's either true or false, and not false, hence true'' --- is
+available the moment you want it (Mathlib imports it as \lean{Classical.choice},
+and we will meet it again on the trust ledger in Chapter~\ref{ch:honesty}),
+but it is an \emph{ingredient you can see}, not smuggled seasoning. When a
+verification result says ``this proof uses only \lean{propext},
+\lean{Classical.choice}, \lean{Quot.sound},'' that is a complete list of the
+logical beliefs you are being asked to hold. Three. You can audit them over
+coffee.
+
+\begin{tryit}
+Open \code{exercises/Ch03.lean} and prove, as programs (no tactics yet!):
+\lean{P -> Q -> P}; \ \lean{(P /\ Q) -> (P \/ Q)}; \ and modus ponens
+\lean{P -> (P -> Q) -> Q}. Each is a one-liner. Feel free to be delighted
+when the pieces click together like typed Lego.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Prove \lean{and_assoc : (P /\ Q) /\ R -> P /\ (Q /\ R)} as a
+term-mode program using \lean{h.1}, \lean{h.2}, and \lean{And.intro}.}
+
+\exercise{Prove \lean{or_swap : P \/ Q -> Q \/ P}. You will need case
+analysis on which side holds: \lean{match h with | Or.inl p => ... | Or.inr q => ...}}
+
+\exercise{\lean{Not P} is \emph{defined} as \lean{P -> False}. Using only
+that, prove \lean{P -> Not (Not P)}. Write down in one sentence what program
+you just wrote.}
+
+\exercise{(Thought) Explain to a skeptical friend why a type with no
+constructors is the right representation of falsehood --- and what would go
+wrong with the whole edifice if someone added a constructor to it.}
+
+\begin{checkpoint}
+You should now be able to: translate each logical connective into its type
+($\to$, $\land$, $\lor$, $\lnot$, $\forall$, $\exists$); write small proofs
+as terms; explain why \lean{rfl} proves \lean{1 + 1 = 2} but not
+\lean{0 + n = n}; and articulate the Curry--Howard slogan --- \emph{proofs
+are programs, propositions are types, checking is type-checking} --- with a
+straight face and genuine conviction.
+\end{checkpoint}

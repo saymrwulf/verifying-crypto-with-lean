@@ -1,0 +1,167 @@
+\chapter{Honesty, Axioms, and the Art of Trusting Proofs}
+\label{ch:honesty}
+
+\section{``Formally verified'' is a claim, not a spell}
+
+The phrase \emph{formally verified} has marketing gravity, and marketing
+gravity attracts abuse. This chapter arms you with the auditor's toolkit:
+what a Lean certificate actually rests on, how to interrogate it in one
+command, and the specific ways a verification claim can be hollow while
+every file compiles. Nothing here is hypothetical --- each failure mode
+appears in the wild, and the discipline below is the one the companion
+projects hold themselves to.
+
+\section{The trust ledger}
+
+When the kernel accepts \lean{fieldImplementation}, what exactly are you
+being asked to believe? Lean can tell you --- precisely:
+
+\begin{lstlisting}[language=Lean]
+#print axioms fieldImplementation
+-- 'fieldImplementation' depends on axioms:
+-- [propext, Classical.choice, Quot.sound]
+\end{lstlisting}
+
+\lean{\#print axioms} walks the \emph{entire} dependency tree of a theorem
+--- every lemma, every lemma's lemmas, down to bedrock --- and reports every
+assumption found there. The three names above are Lean's standard trio
+(propositional extensionality, classical choice, quotient soundness):
+ordinary classical mathematics, accepted by working mathematicians,
+scrutinized by logicians for a century. A certificate reporting exactly
+these three is called \textbf{axiom-clean}. Anything \emph{else} in that
+list is a custom assumption someone added --- and the whole audit consists
+of reading that list and asking whether you believe each entry.
+
+\begin{bigidea}
+A machine-checked theorem is a receipt with a complete list of its own
+assumptions --- something prose mathematics has never had. But the receipt
+only protects people who read it. \textbf{The one-command audit:} run
+\lean{\#print axioms} on the headline theorem; anything beyond
+\lean{[propext, Classical.choice, Quot.sound]} is where the bodies are
+buried. Make this reflex, and no verification claim can hide from you.
+\end{bigidea}
+
+\section{A field guide to hollow certificates}
+
+Compiling proofs can still be worthless. The four classic ways, in
+increasing order of subtlety:
+
+\textbf{1. The \lean{sorry}.} Lean's placeholder accepts any goal with a
+warning. Fine for work in progress; fatal in a certificate, because
+downstream theorems inherit the hole silently. Detection: the compiler
+warns, and \lean{\#print axioms} shows \lean{sorryAx}. Trivial to catch ---
+if you look.
+
+\textbf{2. The smuggled axiom.} Stuck on a lemma? \lean{axiom} makes it
+true. Sometimes legitimate (see the trusted-base section below); rotten when
+undisclosed --- a proof ``of'' the group law that axiomatizes the hard
+half of the group law is theater. Detection: \lean{\#print axioms}, always.
+
+\textbf{3. The trivial specification.} The most instructive one. Consider:
+
+\begin{lstlisting}[language=Lean]
+theorem mul_correct : ∀ a b, ∃ c, mul a b = c := by
+  intro a b; exact ⟨_, rfl⟩   -- checks! and says NOTHING
+\end{lstlisting}
+
+Kernel-approved, axiom-clean, and utterly empty: ``mul returns whatever it
+returns.'' No tool catches this, because nothing is wrong \emph{formally}
+--- the defect is that the statement doesn't say what the reader assumes it
+says. The only detector is a human reading the \emph{statement} (never mind
+the proof) and asking: \emph{if the code were wrong, would this theorem
+fail?} For the trivial spec, the answer is no --- a buggy \code{mul}
+satisfies it identically.
+
+\textbf{4. The wrong model.} The proof is real, the spec is strong --- but
+the thing verified isn't the thing that ships: a hand-transcription
+(Chapter~\ref{ch:rust}), a stale extraction, a simplified semantics.
+Detection: trace the chain from artifact to source --- extraction scripts,
+pinned tool versions, regeneration instructions. If the chain can't be
+replayed, the claim is about an orphan.
+
+\begin{pitfall}
+Rank these by danger and notice the inversion: the crude failures
+(\lean{sorry}, smuggled axioms) are machine-detectable in seconds, while
+the subtle ones (trivial specs, wrong models) defeat every automated check
+and yield only to a thoughtful reader. Verification does not eliminate the
+need for human judgment; it \emph{concentrates} all of it into two small,
+well-lit places --- the statement and the model. That concentration is the
+gift; squandering it by not reading the statement is the sin.
+\end{pitfall}
+
+\section{Honest boundaries: the trusted base}
+
+Real projects meet real limits: SHA-512's compression function, SIMD
+backends no translator models, foreign function calls. The honest move is
+not to pretend, but to \emph{declare}: state the unverified piece as an
+explicit assumption, document it in a ledger (the companion repos call
+theirs \code{TRUSTED-BASE.md}), and let \lean{\#print axioms} carry the
+disclosure to every downstream theorem automatically.
+
+\begin{lstlisting}[language=Lean]
+-- Declared, documented, and visible in every audit forever:
+axiom sha512_spec : ∀ msg, Sha512.hash msg = SHA512_ideal msg
+\end{lstlisting}
+
+A signature-layer certificate honestly reads: \emph{EdDSA verification is
+correct, GIVEN the hash behaves ideally and GIVEN the documented backend
+assumptions} --- with both \emph{given}s machine-visible. Compare the two
+postures: ``everything verified!'' (and hope nobody checks) versus ``these
+two assumptions, this ledger, audit me'' --- the second is both humbler and
+\emph{stronger}, because its claim survives the audit.
+
+The companion projects add one more layer of candor worth copying: a
+\emph{failure map}. Their control repository documents the dead ends ---
+tactic patterns that exhaust memory, extraction scopes that drag in the
+world, proof styles that don't scale --- each with the tell that identifies
+it early. Knowledge of where the cliffs are is part of the method, and
+pretending the cliffs don't exist is how the next person walks off one.
+
+\begin{aha}
+Notice the running theme: at every level, the methodology converts
+\emph{invisible} trust into \emph{visible} trust. Extraction made the
+code-to-model step visible; two-clause specs made operating envelopes
+visible; \lean{\#print axioms} makes logical debts visible; the trusted-base
+ledger makes engineering limits visible. Formal verification's deepest
+product is not certainty --- it is \textbf{legibility of exactly what
+remains uncertain}.
+\end{aha}
+
+\begin{tryit}
+Audit the real thing. In \code{dalek-ed25519-verified}, run
+\lean{\#print axioms} on \code{fieldImplementation} and
+\code{edwardsImplementation} --- confirm the clean trio. Then read
+\code{TRUSTED-BASE.md} and match each entry to where it would surface in an
+audit. Finally, write a deliberately trivial spec for \code{add}, prove it
+in one line, and observe that every automated check passes. Keep that file
+open for one full minute. That minute is the chapter.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{For each hollow-certificate species, name its detector: (a)
+\lean{sorry}; (b) smuggled axiom; (c) trivial spec; (d) wrong model. Which
+two can a CI pipeline catch mechanically, and what CI check would you write
+for each?}
+
+\exercise{Strengthen this spec until a buggy implementation would fail it:
+\lean{theorem sub_ok : ∀ a b, ∃ c, sub a b = .ok c}. (List what's missing:
+bounds hypotheses? bounds propagation? the value equation? Compare with
+Chapter~\ref{ch:denotation}'s two-clause shape.)}
+
+\exercise{A vendor's whitepaper says: ``Our signature library is formally
+verified in Lean.'' Draft the five questions you would send them, in
+priority order, and the answer you would require for each before relying on
+the claim. (You now know all five.)}
+
+\exercise{(Discussion) The trusted-base \lean{axiom} for SHA-512 and the
+smuggled \lean{axiom} for a hard lemma are the \emph{same language feature}.
+Articulate the difference in one sentence --- it is not technical.}
+
+\begin{checkpoint}
+You should now be able to: run and interpret the one-command audit; name
+the standard three axioms and greet anything else with suspicion; explain
+why trivial specs and wrong models defeat automation and what defeats
+\emph{them}; and argue --- with conviction --- why a declared trusted base
+is stronger, not weaker, than a claim of totality.
+\end{checkpoint}

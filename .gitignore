@@ -1,0 +1,10 @@
+*.aux
+build/
+build2.log
+build.log
+.lake/
+lake-manifest.json
+*.log
+*.olean
+*.out
+*.toc

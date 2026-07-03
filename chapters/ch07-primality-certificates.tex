@@ -1,0 +1,174 @@
+\chapter{Convincing a Paranoid Kernel That a 77-Digit Number Is Prime}
+\label{ch:prime}
+
+\section{The problem nobody warns you about}
+
+Chapter~\ref{ch:modular} ended with a quiet dependency: everything ---
+division, field structure, the whole elliptic curve --- rests on
+$p = 2^{255}-19$ \emph{being prime}. In Lean, that is a proposition like any
+other, and it must be \emph{proved}:
+
+\begin{lstlisting}[language=Lean]
+theorem p_prime : Nat.Prime (2^255 - 19) := ?
+\end{lstlisting}
+
+Your Chapter~\ref{ch:automation} instincts say \lean{decide}: primality is
+decidable --- just try dividing. But trial division tests divisors up to
+$\sqrt{p} \approx 2^{127}$. At a billion billion divisions per second, that
+is about $10^{12}$ ages of the universe. The kernel, which happily
+\emph{re-executes} every computation you feed it, cannot afford this one. And
+mathematicians clearly believe this number is prime --- so how does
+\emph{anyone} know?
+
+\section{Certificates: the deep idea hiding here}
+
+The answer reorganizes how you think about computation. \emph{Finding} a
+fact and \emph{checking} a fact can have wildly different costs. What we need
+is a \textbf{certificate}: a piece of data, possibly expensive to discover,
+that makes the fact \emph{cheap to verify}.
+
+You have met certificates before without the name. A composite number's
+certificate is a factor: finding a factor of a 77-digit number may be hard,
+but checking $n = a \cdot b$ is one multiplication. The beautiful surprise
+--- Pratt's theorem, 1975 --- is that \emph{primality} has certificates too:
+
+\begin{bigidea}
+\textbf{Pratt certificate.} To certify that $p$ is prime, exhibit a
+\emph{witness} $w$ such that
+\[
+w^{p-1} \equiv 1 \pmod p
+\qquad\text{and}\qquad
+w^{(p-1)/q} \not\equiv 1 \pmod p
+\ \text{ for every prime factor } q \text{ of } p-1 .
+\]
+Such a $w$ generates all $p-1$ nonzero residues, which forces $\Zmod{p}$ to
+have $p-1$ invertible elements --- something only a prime modulus allows.
+Checking the certificate costs a handful of modular exponentiations
+(milliseconds, by fast squaring), \emph{plus recursively certifying the
+prime factors $q$} --- each much smaller, so the recursion collapses fast.
+\end{bigidea}
+
+Concretely for our hero: $p - 1 = 2^{255} - 20 = 2^2 \cdot 5 \cdot q_1 \cdot
+q_2$ where $q_1$ (44 digits) and $q_2$ (33 digits) are themselves prime, with
+their own small certificates. The full certificate for $p$ is a small tree of
+witnesses and factorizations --- a few hundred bytes of data standing behind
+a 77-digit claim:
+
+\begin{center}
+\begin{tikzpicture}[
+  lvl/.style={draw=ink2,thick,rounded corners=2pt,fill=white,align=center,font=\small},
+  edge/.style={-{Stealth},ink2,thick}
+]
+  \node[lvl,fill=accentsoft] (p) at (0,2.6)
+    {$p = 2^{255}-19$ \quad witness $w=2$\\ $p-1 = 2^2\cdot 5\cdot q_1\cdot q_2$};
+  \node[lvl] (two)  at (-4.4,0.6) {$2$: prime\\ \footnotesize (immediate)};
+  \node[lvl] (five) at (-1.9,0.6) {$5$: prime\\ \footnotesize (immediate)};
+  \node[lvl,fill=provensoft] (q1) at (0.9,0.6) {$q_1$ (44 digits)\\ own witness + factors};
+  \node[lvl,fill=provensoft] (q2) at (4.3,0.6) {$q_2$ (33 digits)\\ own witness + factors};
+  \draw[edge] (p) -- (two); \draw[edge] (p) -- (five);
+  \draw[edge] (p) -- (q1);  \draw[edge] (p) -- (q2);
+  \node[font=\small\color{ink2},align=center] at (0,-0.6)
+    {each node: milliseconds to check; the whole tree: a proof};
+\end{tikzpicture}
+\end{center}
+
+\begin{aha}
+This find/check asymmetry is one of the great ideas of computer science ---
+it is the P versus NP distinction wearing work clothes, and it is the engine
+of zero-knowledge proof systems (the very technology the Pasta curves serve).
+Proof assistants run on it too: Lean's whole architecture --- clever tactics
+\emph{finding}, dumb kernel \emph{checking} --- is the same asymmetry. A
+proof \emph{is} a certificate.
+\end{aha}
+
+\section{The tempting shortcut, and why the house declines it}
+
+Lean offers a faster \lean{decide}: the variant \lean{native_decide}
+compiles the decision procedure to native machine code, runs it at full
+speed, and asserts the result. With a good primality test behind it, it can
+dispatch \lean{Nat.Prime p} in seconds. Case closed?
+
+Look at what you would be trusting. Ordinary \lean{decide} produces a
+computation the \emph{kernel} replays --- the ~few-thousand-line paranoid
+core remains the only thing you trust. \lean{native_decide} instead makes
+the theorem's truth depend on the Lean \emph{compiler}, the C toolchain
+behind it, and the runtime --- hundreds of thousands of lines promoted into
+your trusted base, in exchange for convenience on one theorem. Every proof
+downstream of the field --- group law, scalars, signatures --- would inherit
+that enlarged trust, visible forever in its axiom report
+(Chapter~\ref{ch:honesty} shows you how to read those).
+
+\begin{pitfall}
+\lean{native_decide} is not ``cheating,'' and for exploratory work it is a
+fine tool. The trap is \emph{silent trust inflation}: its use is invisible at
+the theorem statement --- the cost appears only when someone audits the
+axioms, which is exactly what most readers never do. House rule, adopted from
+the projects this book accompanies: exploratory scaffolding may use it;
+\textbf{no shipped certificate depends on it}. The final Pallas-modulus
+primality proof in \code{pasta-pallas-verified} is a kernel-checked
+Lucas/Pratt certificate for precisely this reason.
+\end{pitfall}
+
+\section{Certificates in practice: Mathlib's toolbox}
+
+You will not hand-roll witness trees. Mathlib provides the machinery
+(\lean{Nat.Prime} decision lemmas, \lean{lucas_lehmer}-style infrastructure,
+and the \lean{norm_num} extension \lean{Nat.Prime} plugin) that constructs
+and checks Pratt-style certificates behind a single tactic call --- while
+keeping every step kernel-checked. The shape in real code:
+
+\begin{lstlisting}[language=Lean]
+theorem p_prime : Nat.Prime (2^255 - 19) := by
+  norm_num  -- certificate-backed primality, kernel-checked, ~seconds
+\end{lstlisting}
+
+When the built-in route struggles (very large or awkward moduli), the
+fallback is explicit: state the witness data as definitions, prove the two
+Pratt conditions with \lean{norm_num}-driven modular exponentiation, and
+assemble. That is exactly the structure of the Pallas certificate in the
+companion repository --- worth reading now with fresh eyes:
+\code{pasta-pallas-verified/verification/Proofs/Primality.lean}.
+
+\begin{tryit}
+Open \code{exercises/Ch07.lean}. Ladder: certify $97$, then $65537$ (a
+Fermat prime beloved of RSA), then the ten-digit Mersenne prime $2^{31}-1$,
+watching what each tool costs as the numbers grow. (Amusingly, the
+find/check asymmetry bites the \emph{tactic} too: \lean{norm_num} must
+\emph{find} the witness tree before the kernel checks it, and at $2^{61}-1$
+the finding already takes minutes.) Finale: implement square-and-multiply
+modular exponentiation yourself and check the top witness condition for
+$p = 2^{255}-19$ with \lean{\#eval} --- your own hands on the certificate,
+at 77 digits, in milliseconds.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Verify by hand that $w = 2$ is a Pratt witness for $p = 13$:
+compute $2^{12} \bmod 13$ and $2^{12/q} \bmod 13$ for each prime $q \mid 12$.
+Write the full certificate tree for $13$, recursing into the factors of
+$12$.}
+
+\exercise{Why does the witness condition force primality? Sketch the
+argument: if $w$ has order exactly $p-1$ in $\Zmod{p}$, then the
+multiplicative structure has $p-1$ elements, which fails if $p = ab$ with
+$1 < a,b < p$. (Full rigor optional; the shape is the point.)}
+
+\exercise{Estimate, in modular multiplications, the cost of checking the
+certificate for $2^{255}-19$: count squarings for one exponentiation at 255
+bits, times the number of conditions in the tree above. Compare with the
+$2^{127}$ divisions of trial division. Write both numbers down next to each
+other. Smile.}
+
+\exercise{(Discussion) Bitcoin miners \emph{find} block hashes; nodes
+\emph{check} them. GPS receivers \emph{check} satellite signals they could
+never \emph{find}. Name two more systems built on the find/check asymmetry,
+and one system that would collapse without it.}
+
+\begin{checkpoint}
+You should now be able to: explain why \lean{decide} cannot prove
+$2^{255}-19$ prime while a certificate can; reproduce the two Pratt witness
+conditions and check them on a small prime; articulate exactly what
+additional trust \lean{native_decide} would introduce and why shipped
+certificates decline it; and recognize the find/check asymmetry as the
+common engine of certificates, proof assistants, and the P-vs-NP question.
+\end{checkpoint}

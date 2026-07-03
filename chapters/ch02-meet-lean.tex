@@ -1,0 +1,219 @@
+\chapter{Meet Lean: A Language Where Programs and Proofs Live Together}
+\label{ch:lean}
+
+\section{First contact}
+
+Lean~4 is two things wearing one syntax: a programming language (fast,
+functional, compiled) and a proof assistant. You will learn both faces, but we
+start with the friendlier one. Open a new file \code{Scratch.lean} and type:
+
+\begin{lstlisting}[language=Lean]
+#eval 1 + 1          -- 2
+#eval 2 ^ 255 - 19   -- a 77-digit number, instantly
+#eval "hello".length -- 5
+\end{lstlisting}
+
+\lean{\#eval} runs an expression and prints the result right in your editor.
+Notice the second line: Lean's natural numbers are \emph{arbitrary precision}
+by default. The number $2^{255}-19$ --- which will follow us through the whole
+book --- is a perfectly ordinary value here, not an overflow.
+
+\lean{\#check} asks a different question: not ``what is the value?'' but
+``what is the \emph{type}?''
+
+\begin{lstlisting}[language=Lean]
+#check 1 + 1        -- 1 + 1 : Nat
+#check "hello"      -- "hello" : String
+#check (1 : Int) - 5 -- Int
+\end{lstlisting}
+
+\begin{bigidea}
+In Lean, \textbf{every expression has a type}, and the type checker verifies
+every file before anything runs. This obsession with types is not
+bureaucracy --- in Chapter~\ref{ch:pat} it will turn out to be the entire
+mechanism by which proofs work. Learn to read \code{e : T} as ``$e$ is of
+type $T$'' --- or, with a squint we will justify later, ``$e$ is
+\emph{evidence} for $T$.''
+\end{bigidea}
+
+\section{Definitions and functions}
+
+New names are introduced with \lean{def}:
+
+\begin{lstlisting}[language=Lean]
+def p : Nat := 2 ^ 255 - 19
+
+def double (n : Nat) : Nat := 2 * n
+
+def isEven (n : Nat) : Bool := n % 2 == 0
+
+#eval double 21      -- 42
+#eval isEven p       -- false (p is odd, good: p is supposed to be prime!)
+\end{lstlisting}
+
+Three things to absorb from this snippet:
+
+\begin{itemize}[leftmargin=1.4em]
+\item Function application is written with a space: \lean{double 21}, not
+  \code{double(21)}. It looks strange for a week and then all other syntax
+  looks noisy forever after.
+\item Every definition states its types: \lean{double} takes a \lean{Nat} and
+  returns a \lean{Nat}. Lean can often infer types, but in this book we write
+  them --- specifications are the whole game, and a type is a tiny
+  specification.
+\item Definitions are \emph{immutable equations}, not instructions. There is
+  no ``assignment.'' \lean{p} \emph{is} $2^{255}-19$, forever.
+\end{itemize}
+
+Functions of several arguments simply take them in sequence, and functions
+are values you can pass around:
+
+\begin{lstlisting}[language=Lean]
+def addMul (a b c : Nat) : Nat := a + b * c
+
+def twice (f : Nat -> Nat) (x : Nat) : Nat := f (f x)
+
+#eval twice double 10   -- 40
+\end{lstlisting}
+
+The type of \lean{twice} is worth staring at:
+\lean{(Nat -> Nat) -> Nat -> Nat}. Arrows associate to the right, and a
+multi-argument function is really a chain of single-argument ones --- this is
+called \emph{currying}. Nothing about it needs memorizing now; it will become
+muscle memory.
+
+\section{Inductive types: building data from nothing}
+
+Where do types like \lean{Nat} and \lean{Bool} come from? They are not
+built-in magic. They are \emph{inductive types} --- data types defined by
+listing every way to construct a value. Here is \lean{Bool}, exactly as the
+core library defines it:
+
+\begin{lstlisting}[language=Lean]
+inductive Bool where
+  | false : Bool
+  | true  : Bool
+\end{lstlisting}
+
+Read: ``a \lean{Bool} is either \lean{false} or \lean{true}, and there is no
+other way to make one.'' That closed-world clause is what makes case analysis
+--- and later, proofs by cases --- airtight.
+
+Now the star of the show. The natural numbers, following Peano's 1889 idea:
+
+\begin{lstlisting}[language=Lean]
+inductive Nat where
+  | zero : Nat              -- 0 exists
+  | succ (n : Nat) : Nat    -- every number has a successor
+\end{lstlisting}
+
+Every natural number is \lean{zero} wrapped in finitely many \lean{succ}s:
+the number 3 \emph{is} \lean{succ (succ (succ zero))}. (Lean stores big
+numbers efficiently under the hood, but \emph{reasons} about them through
+this two-case skeleton.) Functions on inductive types are defined by
+\emph{pattern matching} --- one equation per constructor:
+
+\begin{lstlisting}[language=Lean]
+def add : Nat -> Nat -> Nat
+  | m, Nat.zero   => m
+  | m, Nat.succ n => Nat.succ (add m n)
+\end{lstlisting}
+
+\begin{aha}
+Look at what just happened. Addition --- the operation at the bottom of every
+cryptosystem in this book --- is not an axiom or a CPU instruction here. It is
+a \emph{two-line recursive program}, and every arithmetic fact we will ever
+prove unwinds, ultimately, to these two equations. When Lean later claims
+$a + b = b + a$ for \emph{all} numbers, it will be because the structure of
+this definition forces it, not because anyone tested it.
+\end{aha}
+
+\begin{pitfall}
+\lean{Nat} subtraction \emph{truncates}: \lean{\#eval (3 - 5 : Nat)} prints
+\lean{0}, not $-2$, because natural numbers have nowhere to go below zero.
+This single fact causes a large fraction of all beginner proof failures ---
+an identity like $a - b + b = a$ is simply \emph{false} for \lean{Nat}. When
+subtraction must mean subtraction, use \lean{Int}, or carry a hypothesis
+$b \le a$. Real verification projects hit this constantly: machine arithmetic
+wraps, truncates, and overflows, and the proofs must say so honestly.
+\end{pitfall}
+
+\section{Structures: records with guarantees}
+
+The last data-building tool we need bundles several fields together:
+
+\begin{lstlisting}[language=Lean]
+structure Point where
+  x : Int
+  y : Int
+
+def origin : Point := { x := 0, y := 0 }
+
+#eval origin.x   -- 0
+\end{lstlisting}
+
+A preview of why this matters to us: the Rust type
+\rust{struct FieldElement51(pub [u64; 5])} --- five 64-bit limbs representing
+one element of $\Fp$ --- will arrive in Lean (Chapter~\ref{ch:rust}) as
+essentially a structure holding an array of five machine words. The
+verification question of this entire book is: \emph{do operations on those
+five words faithfully implement arithmetic in $\Fp$?} Structures are how the
+data crosses the bridge.
+
+\section{Namespaces, Mathlib, and reading error messages}
+
+Real developments organize names in \lean{namespace} blocks
+(\lean{Nat.add}, \lean{Point.x}) and import the mathematical library:
+
+\begin{lstlisting}[language=Lean]
+import Mathlib
+open Nat
+
+#check Nat.Prime          -- the primality predicate, ready-made
+#check ZMod               -- integers mod n -- our Chapter 6 home
+\end{lstlisting}
+
+And a word of comfort about \emph{error messages}. You will see many. Lean's
+are precise and honest, and the single most useful habit you can develop this
+week is: \textbf{read the expected/actual types in the message, slowly}. A
+message like
+
+\begin{lstlisting}
+type mismatch: argument has type Int but is expected to have type Nat
+\end{lstlisting}
+
+is not the compiler being difficult; it is a specification violation caught at
+the cheapest possible moment. Verification is this same experience scaled up:
+the machine holds the line, and the line is exactly where you drew it.
+
+\begin{tryit}
+Open \code{exercises/Ch02.lean}. It contains the definitions from this chapter
+with a few holes marked \lean{sorry} (a placeholder Lean accepts with a loud
+warning). Replace each with a working definition and watch the warnings
+disappear. In particular: define \lean{mul : Nat -> Nat -> Nat} by recursion,
+using \lean{add} --- the same bootstrapping order (add, then mul) the real
+field proofs follow.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Define \lean{pow : Nat -> Nat -> Nat} (by recursion on the
+exponent) and check with \lean{\#eval} that \lean{pow 2 10 = 1024}.}
+
+\exercise{Define \lean{fib : Nat -> Nat}. Then evaluate \lean{fib 32}. Notice
+the pause --- naive recursion is exponential. (Lean's \lean{\#eval} is fast;
+your algorithm is slow. The distinction matters when we later care about
+\emph{what} is being computed versus \emph{how}.)}
+
+\exercise{Write a structure \lean{Rational} with fields \lean{num : Int} and
+\lean{den : Nat}, and a function \lean{Rational.add}. What property of
+\lean{den} can your type \emph{not} enforce yet? (Keep your answer; Chapter~3
+gives you the tool to fix it.)}
+
+\begin{checkpoint}
+You should now be able to: evaluate and type-check expressions with
+\lean{\#eval}/\lean{\#check}; define functions, including recursive ones over
+\lean{Nat}; explain what an inductive type is and recite the two constructors
+of \lean{Nat}; and state from memory what \lean{Nat} subtraction does on
+$3 - 5$, and why that will matter.
+\end{checkpoint}

@@ -1,0 +1,195 @@
+\chapter{From Rust to Lean: Verifying the Code That Actually Ships}
+\label{ch:rust}
+
+\section{The transcription problem}
+
+Everything so far proved facts about \emph{Lean} programs. But the Ed25519
+that guards your SSH connection is written in \emph{Rust} (in our case,
+\code{curve25519-dalek} and its forks). An obvious plan: read the Rust,
+rewrite it in Lean by hand, verify the rewrite. The plan has a hole you could
+drive a key-recovery attack through: \textbf{what if you transcribe it
+wrong?} A hand-copy that silently fixes a bug --- or introduces one --- makes
+the proof a beautiful statement about code nobody runs.
+
+The projects behind this book close the hole with a mechanical translation
+pipeline:
+
+\begin{center}
+\begin{tikzpicture}[
+  stage/.style={draw=ink2,thick,rounded corners=3pt,align=center,
+                minimum height=1.15cm,minimum width=2.5cm,font=\small},
+  arr/.style={-{Stealth},thick,ink2},
+  lbl/.style={font=\scriptsize\color{ink2},midway,above}
+]
+  \node[stage,fill=codebg]     (rust)  at (0,0)    {\textbf{Rust source}\\ \code{field.rs}};
+  \node[stage,fill=warnsoft]   (llbc)  at (4.0,0)  {\textbf{LLBC}\\ intermediate form};
+  \node[stage,fill=provensoft] (model) at (8.0,0)  {\textbf{Lean model}\\ \code{gen/Funs.lean}};
+  \node[stage,fill=accentsoft] (proof) at (12.0,0) {\textbf{Your proofs}\\ \code{Proofs/*.lean}};
+  \draw[arr] (rust)  -- node[lbl]{Charon}  (llbc);
+  \draw[arr] (llbc)  -- node[lbl]{Aeneas}  (model);
+  \draw[arr] (model) -- node[lbl]{you}     (proof);
+  \node[font=\scriptsize\color{ink2},align=center] at (6.0,-1.15)
+    {machine-generated, never hand-edited \hspace{2.2cm} human-written, kernel-checked};
+\end{tikzpicture}
+\end{center}
+
+\textbf{Charon} compiles the Rust crate into LLBC (``low-level borrow
+calculus''), a simplified intermediate representation. \textbf{Aeneas}
+translates LLBC into pure Lean functions. The generated Lean --- the
+\emph{model} --- lands in a \code{gen/} directory with a strict house rule:
+\emph{never edit it}. Regenerate it from source, or don't touch it. Your
+proofs import the model and state theorems about it.
+
+\begin{bigidea}
+The object of verification is the \textbf{extracted model}, produced from
+the shipping source by a deterministic tool --- not a human transcription.
+The trust question shifts from ``did we copy the code right?'' (unauditable
+squinting) to ``does the translator preserve meaning?'' (one tool, studied
+once, shared by every project that uses it). You will hear this called
+\emph{shrinking the trusted base}: swap many ad-hoc trusts for one
+well-examined trust.
+\end{bigidea}
+
+\section{What extracted code looks like}
+
+Here is real input and real output, lightly abridged. The Rust (from
+\code{curve25519-dalek}, radix-51 field addition):
+
+\begin{lstlisting}[language=RustL]
+impl Add for FieldElement51 {
+    fn add(self, rhs: &FieldElement51) -> FieldElement51 {
+        let mut output = *self;
+        for i in 0..5 {
+            output.0[i] += rhs.0[i];
+        }
+        output
+    }
+}
+\end{lstlisting}
+
+And the Lean model Aeneas produces for it (shape, not verbatim):
+
+\begin{lstlisting}[language=Lean]
+def fieldElement51_add (self rhs : Array U64 5) :
+    Result (Array U64 5) := do
+  let a0 <- Array.index_usize self 0
+  let b0 <- Array.index_usize rhs 0
+  let s0 <- a0 + b0            -- U64 addition: can FAIL on overflow
+  let out <- Array.update self 0 s0
+  ...                          -- and so on for limbs 1..4
+\end{lstlisting}
+
+Three features deserve your full attention, because every proof in the next
+two chapters engages them:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Machine integers are honest.} \lean{U64} is not $\N$; it is
+  64-bit words. Aeneas models arithmetic on them precisely, overflow
+  included.
+\item \textbf{Everything returns \lean{Result}.} The \lean{do}/\lean{<-}
+  notation threads a computation that can \emph{fail} --- returning an error
+  value instead of a result --- exactly where the Rust could panic or
+  overflow. There is no pretending partial functions are total.
+\item \textbf{It is ugly.} Five limbs times load-add-store, all sequenced.
+  Machine-generated code has no taste. The \emph{proofs} restore the
+  elegance; the model's job is fidelity.
+\end{itemize}
+
+\section{Overflow is a proof obligation, not a footnote}
+
+In Rust, \rust{a + b} on \rust{u64} panics in debug mode and wraps in
+release mode when it overflows. In the extracted model, \lean{a + b}
+returns a \lean{Result} that is an error unless the mathematical sum fits.
+So the innocent theorem ``add returns the right field element'' \emph{cannot
+even be stated} without first proving \emph{add returns at all}:
+
+\begin{lstlisting}[language=Lean]
+theorem add_spec (a b : Array U64 5)
+    (ha : LimbsBounded a) (hb : LimbsBounded b) :
+    ∃ c, fieldElement51_add a b = .ok c ∧ LimbsBounded c ∧ ...
+\end{lstlisting}
+
+That hypothesis \lean{LimbsBounded} --- each limb below $2^{54}$, say --- is
+the bounds invariant promised in Chapters~\ref{ch:pat}
+and~\ref{ch:modular}: 51-bit payload plus headroom, so limb additions cannot
+reach $2^{64}$. The specification exposes what the Rust comments only
+whisper: this code is correct \emph{under a discipline of bounded inputs},
+the discipline must be maintained by every caller, and now there is a
+machine checking that it is.
+
+\begin{aha}
+Notice what just happened to ``ugly generated code with Results
+everywhere'': it forced us to discover, state, and prove the \emph{implicit
+operating envelope} of the optimized implementation. The dalek authors knew
+this envelope; it lived in comments and code-review lore. Now it is a
+theorem. Extraction does not merely enable verification --- it
+\emph{interrogates} the code.
+\end{aha}
+
+\section{Practicalities: extraction as surgery}
+
+Running Charon on a whole real-world crate drags in everything the crate
+touches --- iterators, byte serialization, trait machinery, SIMD backends
+--- much of it irrelevant to the arithmetic core and some of it beyond what
+the translator supports. The working method, learned the honest way in the
+companion projects:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Extract functions, not crates.} Charon accepts specific roots
+  (individual functions and impls); the extraction scripts in each companion
+  repo (\code{extract.sh}, \code{extract-scalar.sh}) name exactly the
+  arithmetic functions and get a small, clean model --- 28 definitions
+  instead of a thousand.
+\item \textbf{Some code will not translate.} The dalek scalar-multiplication
+  backends use CPU-specific SIMD intrinsics no translator models. The
+  boundary is then \emph{documented}: those functions enter the trusted base,
+  stated as assumptions, visible in every audit. Honest boundaries beat
+  heroic fictions (Chapter~\ref{ch:honesty} dwells on this).
+\item \textbf{Pin your tools.} The pipeline records exact versions of
+  Charon, Aeneas, and Lean. A model regenerated with a different translator
+  version is a \emph{different model}; reproducibility of the proofs starts
+  with reproducibility of the artifact under proof.
+\end{itemize}
+
+\begin{pitfall}
+When an extraction fails or a model looks bizarre, the temptation is to
+``fix'' the generated Lean by hand. Resist absolutely. A hand-edited model
+is a hand-transcription with extra steps --- the exact hole this pipeline
+exists to close. The fixes live in extraction scope (choose different
+roots), in the source (rarely), or in documented assumptions (openly).
+\end{pitfall}
+
+\begin{tryit}
+Open the companion repo \code{dalek-ed25519-verified}: read
+\code{extract.sh} (the roots), skim \code{verification/gen/Funs.lean} for
+\code{add}/\code{sub} (recognize the load-add-store pattern above), then
+read the first twenty lines of \code{verification/Proofs/FieldSpec.lean}
+and identify: the bounds invariant, the \lean{Result} handling, and the
+statement of the theorem. You now recognize every structural element. The
+mathematics inside is Chapters~\ref{ch:denotation} and~\ref{ch:field}.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{The Rust expression \rust{output.0[i] += rhs.0[i]} hides four
+distinct failure/effect points that the Lean model makes explicit. Name
+them. (Hint: two indexings, one arithmetic operation, one write.)}
+
+\exercise{Suppose limbs are bounded by $2^{54}$. What is the largest value
+\lean{a0 + b0} can take, and how many such additions can chain before a
+\lean{U64} overflow becomes possible? Show the margin calculation --- this
+is precisely why the invariant is $2^{54}$ and not $2^{63}$.}
+
+\exercise{(Design) Your colleague proposes verifying a hand-written Lean
+``reference implementation'' instead of the extracted model, because it is
+prettier. List two failure modes this reintroduces, and one legitimate use a
+reference implementation still has (hint: Chapter~\ref{ch:denotation} uses
+one as the \emph{specification} side).}
+
+\begin{checkpoint}
+You should now be able to: draw the Rust $\to$ LLBC $\to$ Lean pipeline and
+say what each stage preserves; explain why generated models are never
+hand-edited; read a \lean{Result}-typed extracted function and point to
+where overflow lives; and state why ``the proof needs a bounds hypothesis''
+is a discovery about the \emph{code}, not a weakness of the method.
+\end{checkpoint}

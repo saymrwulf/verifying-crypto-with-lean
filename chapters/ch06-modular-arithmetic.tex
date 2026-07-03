@@ -1,0 +1,183 @@
+\chapter{Modular Arithmetic: The Number System Cryptography Lives In}
+\label{ch:modular}
+
+\section{Clock arithmetic, taken seriously}
+
+You already compute modulo twelve every day: four hours after ten o'clock is
+two o'clock. Wrap-around arithmetic --- add, overflow the dial, keep the
+remainder --- is the entire idea of \emph{modular arithmetic}. Cryptography's
+only twist is the size of the clock: Ed25519's dial has
+\[
+p = 2^{255} - 19
+\]
+hours on it --- a 77-digit prime. Everything else --- the wrap-around, the
+remainder-taking, the algebra --- is the twelve-hour clock you already know.
+
+Formally, we write $a \equiv b \pmod{n}$ when $n$ divides $a - b$, and we
+collect all integers with the same remainder into one object: the world
+$\Zmod{n}$ has exactly $n$ elements, $\{0, 1, \dots, n-1\}$, with addition
+and multiplication that wrap. In Lean/Mathlib this world is a first-class
+type, and computation in it is exactly what you would hope:
+
+\begin{lstlisting}[language=Lean]
+#eval (7 + 8 : ZMod 12)    -- 3     (fifteen o'clock is three o'clock)
+#eval (5 * 9 : ZMod 12)    -- 9
+#eval (3 - 7 : ZMod 12)    -- 8     (subtraction wraps -- no truncation!)
+
+def p : Nat := 2^255 - 19
+#eval (2^255 : ZMod p)     -- 19    (of course: 2^255 = p + 19)
+\end{lstlisting}
+
+Note the third line with relief: unlike \lean{Nat}, subtraction in
+\lean{ZMod n} is a total, well-behaved inverse of addition. Every element has
+a negative. In algebra terms, $\Zmod{n}$ is a \emph{commutative ring} --- and
+Lean knows it, so the \lean{ring} tactic from Chapter~\ref{ch:automation}
+works there natively.
+
+\section{Division: where primes enter}
+
+Rings give us $+$, $-$, $\times$. Cryptography also needs $\div$ --- and
+division is where the modulus stops being a size parameter and starts being a
+design decision. Dividing by $a$ means multiplying by some $a^{-1}$ with
+$a \cdot a^{-1} = 1$. Does such an inverse exist? On the twelve-hour clock,
+try to invert $4$: the multiples of $4$ are $4, 8, 0, 4, 8, 0, \dots$ ---
+the value $1$ never appears. $4$ has no inverse mod $12$, because $4$ and
+$12$ share the factor~$4$.
+
+\begin{bigidea}
+In $\Zmod{n}$, the element $a$ is invertible exactly when
+$\gcd(a, n) = 1$. So if $n = p$ is \textbf{prime}, \emph{every} nonzero
+element is invertible: you can divide freely, and $\Zmod{p}$ earns the title
+of \textbf{field}, written $\Fp$. Fields are the arithmetic paradise where
+linear algebra, polynomial factoring, and elliptic-curve geometry all work.
+This --- and only this --- is why cryptographic moduli are prime: primality
+is the entry ticket to division.
+\end{bigidea}
+
+\begin{center}
+\begin{tikzpicture}[scale=0.62,every node/.style={font=\small}]
+  % Z/12 clock: multiples of 4 stuck in a cycle
+  \begin{scope}
+    \draw[ink2,thick] (0,0) circle (2.2);
+    \foreach \i in {0,...,11} \node[color=ink] at ({90-\i*30}:1.8) {\i};
+    \foreach \s/\t in {0/4, 4/8, 8/0}
+      \draw[-{Stealth},accent,thick] ({90-\s*30}:2.55) arc ({90-\s*30}:{90-\t*30+8}:2.55);
+    \node[color=accent,align=center] at (0,-3.4) {$\Zmod{12}$: stepping by $4$\\ visits only $\{0,4,8\}$ --- never $1$};
+  \end{scope}
+  % Z/11 clock: multiples of 4 reach 1
+  \begin{scope}[xshift=9.5cm]
+    \draw[ink2,thick] (0,0) circle (2.2);
+    \foreach \i in {0,...,10} \node[color=ink] at ({90-\i*32.72}:1.8) {\i};
+    \foreach \s/\t in {0/4, 4/8, 8/1}
+      \draw[-{Stealth},proven,thick] ({90-\s*32.72}:2.55) arc ({90-\s*32.72}:{90-\t*32.72+8}:2.55);
+    \node[color=proven,align=center] at (0,-3.4) {$\Zmod{11}$: stepping by $4$\\ reaches $1$ in three steps: $4^{-1}=3$};
+  \end{scope}
+\end{tikzpicture}
+\end{center}
+
+How do you \emph{find} $a^{-1}$ mod $p$? Two classical answers, both of which
+appear in real Ed25519 code: the extended Euclidean algorithm, and Fermat's
+little theorem, which says $a^{p-1} \equiv 1 \pmod p$ for $a \not\equiv 0$
+--- hence $a^{p-2}$ \emph{is} the inverse. The dalek library computes
+inverses as $a^{p-2}$ with a hand-crafted chain of $254$ squarings and $11$
+multiplications; one of the proofs you will meet in Chapter~\ref{ch:field}
+verifies precisely that this chain computes what Fermat promises.
+
+\section{\texorpdfstring{Why $2^{255}-19$?}{Why 2**255-19?} A prime chosen for machines}
+
+Any large prime makes a field. Why this one? Because arithmetic mod $p$ is
+computed by \emph{machines with 64-bit words}, and $p = 2^{255}-19$ is shaped
+for them:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Reduction is a multiply-by-19.} Numbers at or beyond $2^{255}$
+  overflow the dial; but since $2^{255} \equiv 19 \pmod p$, any overflow bit
+  re-enters the sum carrying a factor of just $19$. Reducing mod $p$ costs
+  one small multiplication --- no long division, ever.
+\item \textbf{255 bits split evenly into five limbs of 51.} A 64-bit word
+  holding a 51-bit limb leaves 13 bits of headroom for carries to accumulate
+  lazily --- the delayed-carry style from Chapter~\ref{ch:why}, now by design
+  rather than accident. The bound $a_i < 2^{51+\varepsilon}$ will follow us
+  through Chapters~\ref{ch:denotation} and~\ref{ch:field}.
+\item \textbf{It sits just below a power of two}, so 255-bit values fit in 32
+  bytes with one bit to spare --- and Ed25519 spends that spare bit storing a
+  point's sign. Engineering all the way down.
+\end{itemize}
+
+The Pasta curves verified in the companion projects (Pallas/Vesta, used in
+zero-knowledge proof systems) choose their $\approx 2^{254}$ primes by a
+different criterion --- friendliness to fast Fourier transforms --- and
+represent elements in \emph{Montgomery form}, a representation trick we will
+touch in Chapter~\ref{ch:denotation}. Different shapes, same theory: pick a
+prime whose field your machine can love.
+
+\section{Modular arithmetic in Lean, hands on}
+
+Statements about $\Fp$ are ordinary Lean theorems, and the automation you
+already own applies:
+
+\begin{lstlisting}[language=Lean]
+-- ring identities hold verbatim in ZMod n:
+example (x y : ZMod 12) : (x + y)^2 = x^2 + 2*x*y + y^2 := by ring
+
+-- small finite worlds: check every case
+example : ∀ x : ZMod 12, 4 * x ≠ 1 := by decide
+
+-- inverses exist in prime fields (Mathlib knows ZMod 11 is a field):
+example (a : ZMod 11) (h : a ≠ 0) : a * a⁻¹ = 1 :=
+  ZMod.mul_inv_cancel_of_ne_zero h
+\end{lstlisting}
+
+What about the crown fact, $2^{255} \equiv 19$? For \emph{concrete numeric}
+statements at 77-digit scale, tactic choice suddenly matters: \lean{decide}
+would ask the kernel to grind case analysis it cannot afford, while
+\lean{norm_num} and reflexivity-by-computation on efficient numerals handle
+it comfortably. Verifying real cryptography is partly a \emph{performance
+engineering} discipline --- Chapter~\ref{ch:prime} turns this observation
+into a principle when the question becomes primality itself.
+
+\begin{pitfall}
+In \lean{ZMod n}, the numeral \lean{57896044618658...} and the numeral
+\lean{19} can be \emph{the same element}. Equality of elements is not
+equality of the numerals you typed. When a surprising \lean{rfl} succeeds ---
+or two ``different'' constants turn out equal --- remember you are on the
+clock face, not the number line. This is a feature: the entire verification
+story of Chapter~\ref{ch:denotation} consists of choosing, deliberately, when
+to view a pile of bytes as an integer and when as a clock position.
+\end{pitfall}
+
+\begin{tryit}
+Open \code{exercises/Ch06.lean}. You will: compute your first inverses with
+\lean{\#eval}; expand $(x+y)^3$ in \lean{ZMod 7} with one tactic; show $4$
+has no inverse in \lean{ZMod 12} by \lean{decide}; and prove the reduction
+identity $2^{255} = 19$ in \lean{ZMod p}.
+\end{tryit}
+
+\section*{Exercises}
+
+\exercise{Compute by hand (yes, hand): $3^{-1}$ in $\Zmod{7}$, and check that
+stepping by $3$ on a 7-hour clock visits every position. Then confirm both
+with \lean{\#eval}.}
+
+\exercise{Prove in Lean: \lean{∀ x : ZMod 12, 4 * x ≠ 1}, then change $12$
+to $13$ and watch the same tactic refuse --- find the witness it is
+implicitly pointing at.}
+
+\exercise{Fermat's little theorem is \lean{ZMod.pow_card_sub_one_eq_one} in
+Mathlib. Use it to prove that in \lean{ZMod 11}, \lean{a\textasciicircum{}9 * a = 1} whenever
+\lean{a ≠ 0}.}
+
+\exercise{(Paper) The Ed25519 code reduces a 256-bit value $x$ by writing
+$x = x_{\mathrm{low}} + 2^{255}\, x_{\mathrm{high}}$ and returning
+$x_{\mathrm{low}} + 19\, x_{\mathrm{high}}$. Prove informally that this
+preserves the value mod $p$, and bound how much smaller the result is. You
+have just re-derived the reduction step you will verify formally in
+Chapter~\ref{ch:field}.}
+
+\begin{checkpoint}
+You should now be able to: compute in $\Zmod{n}$ and explain the notation;
+state exactly when division works and why primality guarantees it; give two
+independent reasons the constant $19$ appears throughout curve25519
+codebases; and prove small modular facts in Lean with \lean{decide},
+\lean{ring}, and a Mathlib lemma found by name.
+\end{checkpoint}

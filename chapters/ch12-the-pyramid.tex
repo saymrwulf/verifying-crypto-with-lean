@@ -1,0 +1,158 @@
+\chapter{The Pyramid: From Field to Signature, and Where You Come In}
+\label{ch:pyramid}
+
+\section{The view from the field layer}
+
+Chapter~\ref{ch:field} left us holding a verified field. A signature scheme
+is still three stories up. This closing chapter walks the remaining layers
+--- what each one \emph{states}, what makes each one \emph{hard}, and where
+the campaign stands as this book goes to press --- then hands you the map
+and the keys.
+
+\begin{center}
+\begin{tikzpicture}[
+  lay/.style={draw=ink2,thick,rounded corners=2pt,align=center,minimum height=1.0cm},
+  st/.style={font=\footnotesize\color{ink2},anchor=west,align=left}
+]
+  \node[lay,fill=accentsoft,minimum width=3.0cm]  (sig) at (0,3.75) {\textbf{Signature}};
+  \node[lay,fill=warnsoft,minimum width=5.4cm]    (sca) at (0,2.5)  {\textbf{Scalars mod $\boldsymbol{\ell}$}};
+  \node[lay,fill=provensoft,minimum width=7.8cm]  (grp) at (0,1.25) {\textbf{Group law}};
+  \node[lay,fill=codebg,minimum width=10.2cm]     (fld) at (0,0)    {\textbf{Field $\Fp$}};
+  \node[st] at (5.7,0)    {\textbf{done}: certificates in 4 repos, axiom-clean};
+  \node[st] at (5.7,1.25) {\textbf{done}: complete addition, all 4 forks};
+  \node[st] at (5.7,2.5)  {\textbf{in progress}: foundations proven,\\ mul at the kernel frontier};
+  \node[st] at (5.7,3.75) {\textbf{ahead}: awaits scalars;\\ hash axiomatized by design};
+\end{tikzpicture}
+\end{center}
+
+\section{The group law: geometry becomes algebra}
+
+An elliptic curve is a set of points $(x,y)$ satisfying an equation; for
+Ed25519 it is the \emph{twisted Edwards} curve
+$-x^2 + y^2 = 1 + d\,x^2 y^2$ over $\Fp$. The miracle: these points form a
+\emph{group} under the addition law
+\[
+(x_1,y_1) + (x_2,y_2) \;=\;
+\left(
+\frac{x_1 y_2 + x_2 y_1}{1 + d\,x_1 x_2 y_1 y_2},\;
+\frac{y_1 y_2 + x_1 x_2}{1 - d\,x_1 x_2 y_1 y_2}
+\right).
+\]
+Two facts make this law a verifier's dream, and both carry Edwards-curve
+signatures for exactly this reason. First, it is \textbf{complete}: for the
+Ed25519 parameters those denominators are \emph{never zero} --- no special
+cases for doubling, no branch for the identity, hence constant-time-friendly
+code with no rarely-taken paths for bugs to hide in. (The proof, due to
+Bernstein and Lange, is a jewel of quiet algebra: if a denominator vanished,
+$d$ would have to be a square in $\Fp$ --- and it is not, which is a
+\lean{decide}-scale fact away from primality.) Second, the implementation
+represents points \emph{projectively} (extended coordinates $(X:Y:Z:T)$,
+avoiding division entirely) --- so the layer has its own denotation,
+$(X:Y:Z:T) \mapsto (X/Z, Y/Z)$, and its own commuting squares built on the
+field layer's specs. Same movie, one floor up: the verified group law in the
+companion repos is precisely the statement that projective point addition
+implements the rational formula above, all bounds included, for each fork's
+own extraction.
+
+\section{Scalars: a second field, and a frontier}
+
+The group of curve points has order $8\ell$ with
+$\ell = 2^{252} + 27742\ldots$ prime. Signature arithmetic happens in
+exponents --- multiples of points --- so it is arithmetic mod $\ell$: a
+\emph{second} finite field, with its own Rust implementation (radix-52
+limbs, Montgomery multiplication) and its own denotation bridge. Nothing
+conceptually new --- which is itself the lesson: the method \emph{scales
+sideways} without new ideas.
+
+The engineering, however, has a frontier, and this book has told you enough
+truth to locate it precisely. Scalar Montgomery multiplication mixes
+$2^{256}$-scale coefficients into single certificate steps; this is the
+kernel-capacity wall of Chapter~\ref{ch:field}, and it marks the current
+working edge of the campaign: additions and the foundational constants are
+certified (including the pleasing theorem that the code's constant
+\code{L} \emph{is} $\ell$); the multiplication path is a construction site
+with scaffolding --- decomposed lemmas, isolated carry steps ---
+mid-assembly, honestly labeled in-repo.
+
+\section{The apex: what ``verified signature'' will say}
+
+EdDSA verification accepts $(R, s)$ on message $m$ under key $A$ iff
+\[
+8 s B \;=\; 8 R + 8\,H(R, A, m)\,A
+\]
+in the curve group ($B$ the base point, $H$ = SHA-512, the $8$s absorbing
+the cofactor). The apex certificate will state: \emph{the extracted
+verification routine returns true exactly when this equation holds} ---
+given the two declared trusted-base entries you can already predict:
+SHA-512 as an ideal hash (axiomatized by design --- hash function
+correctness is a different mathematical universe), and the SIMD
+point-multiplication backends (untranslatable, documented). Everything
+between those declared boundaries and the field bedrock: kernel-checked,
+axiom-clean, per fork.
+
+Read that sentence again with Chapter~\ref{ch:honesty} eyes: it is a
+\emph{smaller} claim than ``Ed25519 is verified!'' --- and that is exactly
+why you can believe it.
+
+\section{What you now know, and where to take it}
+
+Take inventory. You can read a goal state and drive a proof; you know which
+decision procedure owns which arithmetic fragment; you can build a
+denotation bridge and state a two-clause spec; you can certify a prime with
+a witness tree; you can audit anyone's certificate in one command and four
+questions. That skill set is not Ed25519-specific --- it is the working
+method of machine-checked mathematics applied to systems, and elliptic
+curves were merely your first campaign.
+
+Where to go from here, in increasing order of ambition:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Read a real proof end-to-end.} \code{FieldSpec.lean} in
+  \code{dalek-ed25519-verified}, top to bottom, with this book as the
+  decoder ring. Budget an afternoon; expect the odd hour of humility.
+\item \textbf{Extend the pyramid.} The scalar layer's open lemmas are
+  decomposed, labeled, and waiting; the repos' \code{CONTRIBUTING} notes
+  state exactly what a finished brick looks like (spec shape, axiom
+  audit, check-script entry). Frontier work, undergraduate-accessible.
+\item \textbf{Verify something of yours.} Pick a 200-line pure function you
+  actually use --- a parser, a checksum, a data structure --- write its
+  denotation (what does it \emph{mean}?), state the square, prove it.
+  The first solo bridge is the moment this stops being a course.
+\item \textbf{Go deeper into the theory.} \emph{Theorem Proving in Lean 4}
+  (the official text), \emph{Mathematics in Lean} (Mathlib's course), and
+  the Lean Zulip --- an unusually welcoming expert community --- are the
+  standard next doors.
+\end{itemize}
+
+\begin{aha}
+One last reframe, the one this book was secretly about. ``Formal
+verification'' sounds like bureaucracy --- forms, stamps, compliance. What
+you actually practiced is closer to \emph{engineering's version of the
+scientific method}: make the claim precise enough to be falsifiable, then
+let an incorruptible referee try to falsify it, then publish the referee's
+report with the assumptions itemized. Cryptography needed that discipline
+first because its failures are silent and adversarial. It will not need it
+last.
+\end{aha}
+
+\begin{tryit}
+The graduation exercise. In the mini-system from
+\code{exercises/Ch09.lean}, the file \code{exercises/Ch12.lean} plants a
+\emph{deliberate off-by-one carry bug} in a variant \lean{add'} --- of
+exactly the species from Chapter~\ref{ch:why}: correct on all limb pairs
+except a thin boundary slice. Your final tasks: (1) write the spec ---
+watch it \emph{refuse to prove}; (2) extract the counterexample from the
+stuck goal state; (3) confirm by \lean{\#eval}; (4) fix the code and finish
+the proof. That arc --- spec, refusal, counterexample, fix, certificate ---
+is the entire profession in miniature. Welcome to it.
+\end{tryit}
+
+\begin{checkpoint}
+The book's ending is a beginning, so the final checkpoint is prospective:
+you should be able to (1) state what each pyramid layer claims and which
+denotation it rides on; (2) explain to a security engineer why completeness
+of the Edwards law matters to \emph{code}; (3) locate the current frontier
+and say precisely why it is hard; and (4) name the next proof \emph{you}
+intend to write. The authors of the companion repositories left the
+scaffolding up on purpose.
+\end{checkpoint}

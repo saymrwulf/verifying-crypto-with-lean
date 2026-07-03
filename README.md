@@ -105,3 +105,11 @@ In the spirit of Chapter 11:
   time of writing; the repos, not this book, are the source of truth.
 - The PDF in the repo is built from the committed sources by the command
   above; rebuild it yourself if you don't trust binaries (good instinct).
+- The three named solution certificates were kernel-audited
+  (coherence pass 2, 2026-07-03): `Ch09.add_spec` depends on
+  `[propext, Classical.choice, Quot.sound]`; `Ch09.mulVal_spec` and
+  `Ch12.addFixed_spec` on `[propext, Quot.sound]` only. The Interlude's
+  "compiled and axiom-audited" phrase shipped one pass before its audit
+  had actually been run — caught by the verification projects' own
+  coherence process and made true; recorded here in the spirit of
+  Chapter 11.

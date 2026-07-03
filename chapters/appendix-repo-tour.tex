@@ -1,0 +1,122 @@
+\chapter{A Guided Tour of the Real Repositories}
+\label{app:tour}
+
+The companion projects are working code, laid out for auditors rather
+than tourists. This appendix is the tourist map: what lives where, what
+to read first, and how to run the machinery yourself. Everything below
+names \code{dalek-ed25519-verified}; the other three ed25519 forks are
+structured identically, and \code{pasta-pallas-verified} differs only
+where Montgomery form demands it.
+
+\section{The floor plan}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lp{0.62\linewidth}@{}}
+\toprule
+\textbf{Path} & \textbf{What it is, and the rule that governs it} \\
+\midrule
+\code{README.md} & the claims: what is proven, what is frontier ---
+the honest-boundary statements of Chapter~\ref{ch:honesty} \\
+\code{TRUSTED-BASE.md} & the ledger: every assumption, each with its
+reason --- read this \emph{before} being impressed by anything \\
+\code{verification/extract.sh} & extraction roots for the field layer
+(Charon $\to$ LLBC $\to$ Aeneas); \code{extract-scalar.sh} likewise for
+scalars \\
+\code{verification/gen/} & the extracted model. \textbf{Never
+hand-edited} (Chapter~\ref{ch:rust}); regenerated or left alone \\
+\code{verification/Proofs/} & the human-written theorems ---
+denotations, bounds lemmas, layer certificates. \textbf{No \lean{axiom}
+may appear here} (the check script enforces it) \\
+\code{verification/check.sh} & THE button: recompiles every shipped
+file in dependency order and axiom-audits every certificate; if a file
+is in the repo, this script checks it \\
+\code{verification/lean-guard} & the resource-capped \lean{lean}
+wrapper every compile routes through --- the postmortem-hardened
+tooling mentioned in Chapters~\ref{ch:automation}
+and~\ref{ch:field} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{A reading order that works}
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{\code{TRUSTED-BASE.md}} (five minutes). Count the
+entries; for each, ask the Chapter~\ref{ch:honesty} question ---
+``declared debt or smuggled axiom?'' --- and notice each has its
+justification attached.
+\item \textbf{The denotation} (in \code{Proofs/}, near the top of the
+field spec file). One definition; confirm it is
+Chapter~\ref{ch:denotation}'s radix-51 sum, mapping the \emph{extracted}
+type.
+\item \textbf{One two-clause spec end to end} --- \code{sub} is the
+best first read: bounds hypotheses, \lean{.ok} clause, bounds
+propagation, value equation, and inside the proof, the $16p$ constant
+you audited in Chapter~\ref{ch:field}'s worked example.
+\item \textbf{The certificate} --- the conjunction theorem
+(\code{fieldImplementation}) and its \lean{\#print axioms} line. This
+is the artifact all the marketing language ultimately refers to; note
+how unglamorous it looks.
+\item \textbf{The frontier} --- the scalar layer's in-progress files,
+clearly marked. Read one open lemma statement and recognize its shape
+(it is 9.B with bigger constants). This is where
+Chapter~\ref{ch:pyramid}'s invitation points.
+\end{enumerate}
+
+\section{Running the machinery}
+
+With the toolchain installed (the repos pin exact versions ---
+Chapter~\ref{ch:rust}'s reproducibility discipline):
+
+\begin{lstlisting}
+$ ./verification/check.sh
+=== Phase 1: stub audit ===
+  clean: no trivial stubs, no True targets, no axioms outside gen/
+=== Phase 2: compile ===
+  [gen] CurveField/Funs ... ok
+  [proofs] FieldSpec ... ok        (no 'sorry' warnings -- enforced)
+=== Phase 3: axiom audit ===
+  fieldImplementation: [propext, Classical.choice, Quot.sound]  OK
+ALL CHECKS PASSED
+\end{lstlisting}
+
+Three details make this script worth imitating in your own projects.
+\emph{Phase 1 runs before compilation}: trivial-stub patterns
+(\lean{by trivial} specs, \lean{True} targets) and \lean{axiom}
+declarations under \code{Proofs/} are cheap textual gates --- the
+mechanical half of the Chapter~\ref{ch:honesty} field guide, automated.
+\emph{Phase 2 treats warnings as failures}: the string
+\lean{uses 'sorry'} in compiler output fails the build --- warnings,
+unlike source text, cannot be hidden in comments. \emph{Phase 3 is the
+one-command audit}, run on every certificate, every time, so the
+axiom-clean property is continuously enforced rather than occasionally
+asserted.
+
+\section{The control repository}
+
+\code{formal-verification-control} is the method distilled --- written
+for the next person (or the next automated agent) to extend the
+pyramid without relearning its lessons:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \code{INVARIANTS.md} --- the non-negotiables (honesty, safety,
+rigor); the source of house rules this book has been quoting.
+\item \code{TERRAIN.md} --- the map: pipeline, toolchain, layer status,
+representation costs.
+\item \code{METHOD.md} --- ways of thinking that worked, stated as
+practices rather than commandments.
+\item \code{FAILURES.md} --- mapped dead ends \emph{with their tells}:
+the memory-exhausting tactic patterns, the extraction scopes that drag
+in the world, the kernel-capacity wall. Chapter~\ref{ch:field} told two
+of these stories; the file has the rest, and reading failure maps
+before starting work is the cheapest experience money can't buy.
+\end{itemize}
+
+A closing observation to carry out of the tour: nothing in these
+repositories asks to be trusted. The claims are in the READMEs, the
+assumptions in the ledgers, the checks in a script anyone can run, the
+axioms in a one-command audit. That shape --- \emph{auditability as the
+default posture} --- is the real deliverable of the whole verification
+enterprise, and the standard this book hopes you now hold everything
+else to.

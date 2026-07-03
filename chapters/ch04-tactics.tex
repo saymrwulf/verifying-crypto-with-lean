@@ -107,6 +107,62 @@ for \lean{succ k} \emph{assuming it for} \lean{k} (the induction hypothesis
 \lean{ih}). Because every natural number is built from those two
 constructors, the two cases cover infinity.
 
+\begin{worked}{the full board of \lean{zero\_add} --- every goal state, by hand}
+Reading a finished tactic proof is like reading a chess score without a
+board. Here is the same proof \emph{with} the board: every goal state
+written out, exactly as the editor would show it. Reproduce this trace on
+paper until the transitions feel inevitable --- it is the core skill of
+this chapter. We prove \lean{0 + n = n}, where \lean{+} recurses on its
+second argument (Chapter~\ref{ch:lean}).
+
+\smallskip
+\noindent After \lean{induction n with}, two boards appear.
+\emph{Case} \lean{zero}:
+\begin{lstlisting}
+⊢ 0 + 0 = 0
+\end{lstlisting}
+The second argument is the literal \lean{0}, so the first defining
+equation fires: \lean{0 + 0} \emph{computes} to \lean{0}. Both sides are
+now the same term; \lean{rfl} closes the board. (Compare the worked
+example in Chapter~\ref{ch:pat}: this is the ``computation sees it'' half.)
+
+\smallskip
+\noindent\emph{Case} \lean{succ}: the board now carries an assumption ---
+the induction hypothesis:
+\begin{lstlisting}
+k : Nat
+ih : 0 + k = k
+⊢ 0 + (k + 1) = k + 1
+\end{lstlisting}
+The left side is \lean{add 0 (succ k)}; the \emph{second} defining
+equation fires and rewrites it to \lean{succ (0 + k)}. That step is the
+tactic \lean{rw [Nat.add_succ]} (or one layer of
+\lean{simp only [Nat.add]}), and the board becomes:
+\begin{lstlisting}
+k : Nat
+ih : 0 + k = k
+⊢ (0 + k) + 1 = k + 1
+\end{lstlisting}
+Now the subterm \lean{0 + k} is \emph{exactly} the left side of \lean{ih}.
+Rewriting with \lean{rw [ih]} replaces it:
+\begin{lstlisting}
+k : Nat
+ih : 0 + k = k
+⊢ k + 1 = k + 1
+\end{lstlisting}
+Identical sides --- \lean{rw} auto-closes with \lean{rfl}. Done.
+
+\smallskip
+Two habits to take from this trace. First, at every step ask ``which
+defining equation \emph{can} fire, and on which subterm?'' --- that
+question, not tactic names, is what drives the proof. Second, notice
+where the induction hypothesis earned its keep: computation alone got
+stuck at \lean{0 + k} (opaque variable --- Chapter~\ref{ch:pat}'s blocked
+reduction), and \lean{ih} is precisely the permission to cross that gap.
+An induction proof is computation, plus permission slips at the stuck
+points.
+\end{worked}
+
 \begin{aha}
 Induction is not a new axiom to swallow --- it falls out of the inductive
 definition of \lean{Nat} itself. ``Every \lean{Nat} is \lean{zero} or a
@@ -114,6 +170,46 @@ definition of \lean{Nat} itself. ``Every \lean{Nat} is \lean{zero} or a
 structure \emph{is} the induction. Data and proof principle are two views of
 the same declaration. This is Curry--Howard paying rent again.
 \end{aha}
+
+\begin{worked}{a debugging session, reconstructed honestly}
+Here is a stuck proof, exactly as it happens to everyone, worked
+through with the discipline this chapter preaches. Goal: every number
+is at most its double --- \lean{∀ n : Nat, n ≤ 2 * n}. Attempt one:
+\begin{lstlisting}[language=Lean]
+theorem le_double (n : Nat) : n ≤ 2 * n := by
+  induction n with
+  | zero => rfl                -- fine: 0 ≤ 0 checks
+  | succ k ih => rw [ih]       -- ERROR
+\end{lstlisting}
+The error says \lean{rw} failed: \lean{ih} is
+\lean{k ≤ 2 * k} --- an \emph{inequality}, and \lean{rw} rewrites with
+\emph{equations} only. First lesson banked: the tactic wasn't wrong,
+the \emph{move category} was --- inequalities compose by transitivity
+and monotonicity, not substitution. Attempt two, reading the goal
+state first this time:
+\begin{lstlisting}
+k : Nat
+ih : k ≤ 2 * k
+⊢ k + 1 ≤ 2 * (k + 1)
+\end{lstlisting}
+Plan on paper before touching the keyboard: $2(k+1) = 2k + 2$, and from
+\lean{ih}, $k + 1 \le 2k + 1 \le 2k + 2$ ✓ --- a two-step transitivity
+chain. That \emph{plan} is provable many ways
+(\lean{calc}, \lean{Nat.succ_le_succ} plus lemmas)\dots{} at which
+point the honest practitioner pauses: hypotheses and goal are all
+\emph{linear arithmetic}. The entire induction was unnecessary:
+\begin{lstlisting}[language=Lean]
+theorem le_double (n : Nat) : n ≤ 2 * n := by omega
+\end{lstlisting}
+Third lesson, the big one: getting stuck is often the discovery that
+you are proving something in the wrong \emph{fragment} --- and the next
+chapter is precisely the field guide to fragments. Keep the session's
+order of operations, though, because it generalizes: (1) read what the
+error says about the move category; (2) write the goal state and plan
+on paper; (3) only then ask whether a decision procedure owns the whole
+goal. Ten seconds of (3) before an hour of (2) is the professional's
+cheat --- but (2) is what makes you able to survive when (3) says no.
+\end{worked}
 
 \begin{pitfall}
 When a proof gets stuck, resist the urge to try random tactics --- the
@@ -141,6 +237,40 @@ example (a b : Nat) (h : a = 2 * b) : a + a = 4 * b := by
        _     = 2 * (2 * b) := by rw [h]
        _     = 4 * b       := by rw [← Nat.mul_assoc]
 \end{lstlisting}
+
+\begin{worked}{planning a \lean{calc} on paper --- backwards from the target}
+Professionals do not type a \lean{calc} top-to-bottom and hope; they plan
+it on paper, usually \emph{backwards}. Watch the method on the real
+reduction identity from the Ed25519 code (Chapter~\ref{ch:modular} proves
+the ingredients): given a 256-bit value split as
+$x = x_{\mathrm{lo}} + 2^{255} x_{\mathrm{hi}}$, the code returns
+$x_{\mathrm{lo}} + 19 x_{\mathrm{hi}}$, and we owe
+\[
+x_{\mathrm{lo}} + 19\, x_{\mathrm{hi}}
+\;\equiv\;
+x \pmod{p}.
+\]
+Plan backwards: the target's right side is $x$, which we only know through
+its \emph{definition}, so the last line of the chain will be
+``$\ldots = x_{\mathrm{lo}} + 2^{255} x_{\mathrm{hi}} = x$ by the split.''
+What could precede it? Something that turns $19$ into $2^{255}$: the fact
+$19 \equiv 2^{255}$, i.e.\ the constant identity $2^{255} - 19 = p
+\equiv 0$. So the middle step is a congruence rewrite, and the paper plan
+reads, bottom to top:
+\[
+\begin{array}{lll}
+\text{(3)} & x_{\mathrm{lo}} + 2^{255} x_{\mathrm{hi}} = x & \text{definition of the split}\\
+\text{(2)} & x_{\mathrm{lo}} + 19\, x_{\mathrm{hi}} \equiv x_{\mathrm{lo}} + 2^{255} x_{\mathrm{hi}} & \text{since } 19 \equiv 2^{255} \pmod p\\
+\text{(1)} & \text{start: } x_{\mathrm{lo}} + 19\, x_{\mathrm{hi}} & \\
+\end{array}
+\]
+Reverse it, and the \lean{calc} types itself --- each line's justification
+was decided \emph{before} any Lean was written. The habit scales: the real
+multiplication proof in \code{dalek-ed25519-verified} was planned exactly
+this way, as a page of paper algebra whose lines became \lean{have}s. When
+you cannot plan the chain on paper, you are not ready to type it; the
+proof assistant checks reasoning, it does not supply it.
+\end{worked}
 
 This style is not cosmetic. In the verified field arithmetic you will read
 later, a single multiplication correctness proof is a \lean{calc} chain
@@ -184,6 +314,78 @@ yourself (search hint: \lean{exact?} asks Lean to search for you).}
 \lean{h : a < 2\textasciicircum{}51 ⊢ a * 19 < 2\textasciicircum{}56}, no induction is needed --- this is pure
 arithmetic. Which tactic from the table would you \emph{guess} handles it?
 (Answer next chapter; your guess is the point.)}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{4.1}
+\pathway Before proving anything, predict which facts are \emph{free}:
+addition recurses on its second argument, so any statement whose second
+argument exhibits a constructor should compute. Both requested statements
+--- \lean{n + 0 = n} and \lean{n + succ m = succ (n + m)} --- have
+constructor-shaped second arguments (\lean{0} and \lean{succ m}). The
+honest content of this exercise is noticing that.
+\answer \lean{theorem a : ∀ n : Nat, n + 0 = n := fun n => rfl} --- the
+first defining equation. \lean{theorem b : ∀ n m, n + succ m = succ (n+m)
+:= fun n m => rfl} --- the second. Neither needs induction; both are the
+definitional mirror images of the two facts that \emph{do}
+(\lean{0 + n = n}, \lean{succ n + m = succ (n + m)}), which is exactly the
+asymmetry the worked example traced. If you reached for \lean{induction}
+here, nothing is wrong --- it succeeds --- but recognizing a free fact
+saves you thirty seconds a hundred times a day.
+
+\solhead{4.2}
+\pathway Induct on \lean{m} (the variable the recursion consumes on the
+\emph{right} of \lean{n + m}), so the definitional equations fire on one
+side and 4.1's lemmas patch the other. In each case, before touching
+tactics, write the goal and ask: which side steps by definition, which
+needs a lemma?
+\answer
+\begin{lstlisting}[language=Lean]
+theorem add_comm' (n m : Nat) : n + m = m + n := by
+  induction m with
+  | zero      => rw [Nat.add_zero, Nat.zero_add]
+  | succ k ih => rw [Nat.add_succ, Nat.succ_add, ih]
+\end{lstlisting}
+Prose, one sentence per case, as requested. \emph{Zero case:} ``$n + 0$ is
+$n$ by definition, and $0 + n$ is $n$ by the mirror lemma, so both sides
+are $n$.'' \emph{Successor case:} ``both sides compute to a successor ---
+the left by the defining equation, the right by the mirror lemma --- and
+under the \lean{succ} the two sides are the induction hypothesis.'' Note
+the architecture: two definitional equations, two mirror lemmas, one
+induction --- commutativity is not one fact but a small \emph{ecosystem},
+and you have now built all of it from bare constructors.
+
+\solhead{4.3}
+\pathway For the induction route, the \lean{succ} case needs
+$2(k+1) = (k+1) + (k+1)$ reorganized into the induction hypothesis's shape
+plus successors --- expect two rewrites. For the library route, the skill
+is \emph{search}: place the cursor on the goal and run \lean{exact?}.
+\answer Induction:
+\begin{lstlisting}[language=Lean]
+theorem two_mul' (n : Nat) : 2 * n = n + n := by
+  induction n with
+  | zero      => rfl
+  | succ k ih => rw [Nat.mul_succ, ih, Nat.succ_add, Nat.add_succ]
+\end{lstlisting}
+Library: \lean{exact?} finds \lean{Nat.two_mul}, so
+\lean{theorem two_mul'' (n : Nat) : 2 * n = n + n := Nat.two_mul n}. Both
+are legitimate craft: the first when you are building the ecosystem, the
+second when you are using it. Mathlib has over 200{,}000 lemmas ---
+searching \emph{is} a proof technique, and \lean{exact?} is its tactic.
+
+\solhead{4.4}
+\pathway The goal mixes a hypothesis bound, multiplication by a
+\emph{constant}, and powers of two --- inspect the table: nothing fits
+perfectly, which is the setup's point. What you want is a decision
+procedure for linear arithmetic.
+\answer The intended guess is \lean{simp} or \lean{rw}-with-lemmas ---
+and the intended discovery is that neither is pleasant. The actual answer,
+one chapter ahead: \lean{omega}, which decides such goals instantly
+because $a \cdot 19$ is \emph{linear} in $a$ (19 is a constant). If you
+guessed \lean{omega} from the table's absence, better still: you have
+started classifying goals by \emph{logical fragment}, which is precisely
+the professional habit Chapter~\ref{ch:automation} installs.
 
 \begin{checkpoint}
 You should now be able to: read a goal state (context, turnstile, goal);

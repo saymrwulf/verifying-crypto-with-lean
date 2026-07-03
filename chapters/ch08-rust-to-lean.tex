@@ -117,6 +117,47 @@ whisper: this code is correct \emph{under a discipline of bounded inputs},
 the discipline must be maintained by every caller, and now there is a
 machine checking that it is.
 
+\begin{worked}{running the extracted model by hand, at the envelope's edge}
+Trace the extracted \lean{fieldElement51_add} on paper twice --- once
+safely inside the operating envelope, once outside --- and watch the
+\lean{Result} machinery earn its keep. The model threads every step
+through \lean{Result}: a step either produces \lean{.ok v} and the
+\lean{do}-block continues, or produces an error and everything after it
+is skipped (short-circuit).
+
+\emph{Run 1 --- the worst legal input.} Take both arguments at the very
+edge of the bounds discipline: every limb of both inputs equal to
+$2^{54} - 1$ (the maximum the invariant \lean{LimbsBounded} admits).
+Limb $0$:
+\[
+s_0 = (2^{54}-1) + (2^{54}-1) = 2^{55} - 2 \;<\; 2^{64}. \quad
+\text{\lean{.ok} --- continue.}
+\]
+Same for limbs $1$--$4$; the block reaches its end and returns
+\lean{.ok} of the array with every limb $2^{55}-2$. Note the output
+\emph{exceeds} $2^{54}$: addition legitimately leaves the input envelope,
+which is why the spec's conclusion states the \emph{wider} bound
+$< 2^{55}$ --- bounds flow through operations, and every theorem must say
+where they land. Nothing is failing here; the envelope is simply moving.
+
+\emph{Run 2 --- one step past the cliff.} Now feed limbs of $2^{63}$
+(representable in a \lean{U64}, but far outside the invariant):
+\[
+s_0 = 2^{63} + 2^{63} = 2^{64}
+\;\not<\; 2^{64}
+\quad\Longrightarrow\quad \text{the addition returns an error.}
+\]
+The \lean{do}-block short-circuits: limbs $1$--$4$ never execute, and the
+whole function returns the failure --- in Rust terms, this is the input on
+which the release build would have \emph{silently wrapped} to $0$ and kept
+going. The model turned undefined-ish behavior into a visible, provable
+event. Now reread the spec with both runs in mind: the hypotheses
+\lean{LimbsBounded a}/\lean{LimbsBounded b} are exactly the promise that
+run 2 cannot happen, and the conclusion \lean{∃ c, ... = .ok c} is
+exactly the payoff. One theorem, and the wrap-around is not ``probably
+absent'' but \emph{impossible for every input the discipline admits}.
+\end{worked}
+
 \begin{aha}
 Notice what just happened to ``ugly generated code with Results
 everywhere'': it forced us to discover, state, and prove the \emph{implicit
@@ -150,6 +191,32 @@ companion projects:
   version is a \emph{different model}; reproducibility of the proofs starts
   with reproducibility of the artifact under proof.
 \end{itemize}
+
+\begin{worked}{sizing an extraction --- the surgery, quantified}
+``Extract functions, not crates'' sounds like taste; it is arithmetic,
+and the numbers from the actual scalar-layer extraction of
+\code{dalek-ed25519-verified} make it vivid. First attempt: point Charon
+at the \code{Scalar} type wholesale. The dependency closure dragged in
+the byte-serialization path (\rust{from_bytes}: shifts, masks, and a
+\rust{wrapping_shr} on a signed type), the iterator machinery behind a
+zip-reverse-fold (\code{IterMut}, \code{Chunks}, three trait
+instantiations each), and the high-level wrapper's trait impls ---
+roughly a \emph{thousand} generated definitions, several using features
+at the translator's edge, every one of them something a proof might have
+to step around. Second attempt: name exactly the arithmetic roots ---
+\code{Scalar52::add}, \code{sub}, \code{mul_internal},
+\code{montgomery_reduce}, and their constants --- and the generated
+model is \emph{28 definitions}, every one arithmetic, every one
+provable. Do the auditor's division: $28/1000$ --- the surgery cut
+$97\%$ of the material a reader would otherwise have to trust-or-verify.
+The lesson generalizes beyond this pipeline: \textbf{the size of the
+thing you verify is a design variable}, and an hour spent narrowing
+extraction roots buys weeks of not proving lemmas about iterator
+adapters. (The one-sentence version for your future code reviews:
+verification pressure flows backwards into interface design ---
+arithmetic kernels with narrow waists get verified; grand unified
+objects do not.)
+\end{worked}
 
 \begin{pitfall}
 When an extraction fails or a model looks bizarre, the temptation is to
@@ -185,6 +252,60 @@ is precisely why the invariant is $2^{54}$ and not $2^{63}$.}
 prettier. List two failure modes this reintroduces, and one legitimate use a
 reference implementation still has (hint: Chapter~\ref{ch:denotation} uses
 one as the \emph{specification} side).}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{8.1}
+\pathway Expand the sugared Rust into its elementary operations, in
+evaluation order, and ask of each: can this one panic, wrap, or write?
+\answer In order: (1) \emph{index read} \rust{rhs.0[i]} --- can panic if
+$i$ is out of bounds (here the loop guarantees $i < 5$, and the model
+makes even that guarantee a visible \lean{Result} on
+\lean{Array.index_usize}); (2) \emph{index read} \rust{output.0[i]} ---
+same; (3) \emph{the addition} --- can overflow the \lean{U64}: the
+failure point the worked example walked off; (4) \emph{the write-back}
+into \rust{output.0[i]} --- an effect the pure model represents as
+\lean{Array.update}, producing a \emph{new} array value (functional
+update). Four operations, three failure modes, one effect --- all hidden
+inside \rust{+=} and all explicit in the extracted model, which is
+precisely why the model is provable and the sugar is not.
+
+\solhead{8.2}
+\pathway Maximize under the hypothesis, then chain: after $k$ additions
+without reduction, limbs can approach $k$ times the single-input bound;
+find where that crosses $2^{64}$.
+\answer Largest single sum: $s_0 = 2 \cdot (2^{54}-1) = 2^{55}-2$.
+Chaining: adding $k$ inputs all bounded by $2^{54}$ yields limbs
+$< k \cdot 2^{54}$; the \lean{U64} cliff sits where
+$k \cdot 2^{54} \ge 2^{64}$, i.e.\ $k = 2^{10} = 1024$ chained additions.
+The margin calculation behind ``$2^{54}$, not $2^{63}$'': the invariant
+must survive \emph{multiplication}, whose column sums need
+$5 \cdot (\text{bound})^2 < 2^{128}$ (the Chapter~\ref{ch:automation}
+worked example: $5 \cdot 2^{108} < 2^{111}$, seventeen bits spare). A
+$2^{63}$ bound would give $5 \cdot 2^{126} > 2^{128}$ --- overflow. So
+the number $54$ is set by the \emph{quadratic} consumer of the bound, not
+the linear one, and the addition headroom ($1024$ chained adds) is what
+falls out, not what was aimed for. Real invariants are negotiated
+between operations; the spec records the treaty.
+
+\solhead{8.3}
+\pathway For failure modes, ask what the mechanical pipeline was bought
+to eliminate. For the legitimate use, ask what role \emph{wants} to be
+clean and human-readable rather than faithful to machine details.
+\answer Two reintroduced failure modes: (1) \emph{transcription drift} ---
+the hand-model quietly fixes, or introduces, an off-by-one the Rust does
+not have, and the proof certifies the wrong artifact (the exact hole the
+pipeline closes); (2) \emph{staleness} --- the Rust moves on (a rebase,
+an optimization), nobody re-syncs the hand-model, and the certificate
+silently detaches from the shipping code; extraction fails loudly
+instead. One legitimate use: as the \emph{specification} --- the clean,
+obviously-correct definition (schoolbook arithmetic over $\Fp$, ideal
+group law) that the ugly extracted model is proven \emph{equal to}. The
+reference implementation's prettiness is a liability in the role of
+``thing verified'' and an asset in the role of ``thing verified
+against'' --- one sentence worth keeping for every verification design
+review you ever attend.
 
 \begin{checkpoint}
 You should now be able to: draw the Rust $\to$ LLBC $\to$ Lean pipeline and

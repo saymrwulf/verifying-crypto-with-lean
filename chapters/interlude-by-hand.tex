@@ -1,0 +1,334 @@
+\chapter*{Interlude: A Complete Verification, Entirely by Hand}
+\markboth{Interlude: A Complete Verification, Entirely by Hand}{}
+\addcontentsline{toc}{chapter}{Interlude: A Complete Verification, Entirely by Hand}
+
+Before the full field campaign of the next chapter, we pause to do
+something no other book chapter will ask of you again: verify an
+arithmetic implementation \emph{completely}, on paper, with nothing left
+to the machine --- and then watch the same proof re-enacted in Lean,
+line by line. The system is the two-limb miniature from
+Chapter~\ref{ch:denotation}'s exercises; the point is that after this
+interlude, nothing in the real proofs is a new \emph{kind} of thing ---
+only a bigger instance of what your own pen has already done.
+
+\section*{I.1 \quad The system, restated in full}
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Representation.} A value is a pair of natural-number limbs
+$(a_0, a_1)$, intended as base-4 digits.
+\item \textbf{Bounds invariant.} $\mathrm{Bnd}(a) \;:\Longleftrightarrow\;
+a_0 < 4 \,\wedge\, a_1 < 4$.
+\item \textbf{Denotation.} $\denote{a} = a_0 + 4 a_1 \in \Zmod{15}$.
+The modulus $15$ is chosen so that the radix squared folds:
+$16 \equiv 1 \pmod{15}$ --- the toy twin of $2^{255} \equiv 19$.
+\item \textbf{The implementation under verification.}
+\[
+\code{add}(a, b) := \big(\, s_0 \bmod 4 + \lfloor s_1 / 4 \rfloor,\;\;
+s_1 \bmod 4 \,\big),
+\quad\text{where } s_0 = a_0 + b_0,\;
+s_1 = a_1 + b_1 + \lfloor s_0 / 4 \rfloor .
+\]
+In words: add low limbs; carry into the high sum; the high sum's own
+overflow --- weight $16 \equiv 1$ --- folds back into the low limb.
+\end{itemize}
+
+\section*{I.2 \quad The specification}
+
+The two-clause shape of Chapter~\ref{ch:denotation}, in full:
+\[
+\textbf{(Spec)}\qquad
+\mathrm{Bnd}(a) \to \mathrm{Bnd}(b) \to
+\underbrace{\big( \code{add}(a,b)_0 < 5 \,\wedge\, \code{add}(a,b)_1 < 4 \big)}_{\text{bounds clause}}
+\;\wedge\;
+\underbrace{\denote{\code{add}(a,b)} = \denote{a} + \denote{b}}_{\text{value clause}} .
+\]
+Pause on the asymmetric output bound: the low limb is only promised
+$< 5$, not $< 4$ --- the fold can push it one past a clean digit. An
+honest spec records where the envelope actually lands, and the next
+operation's hypotheses must accept what this one delivers. (In the real
+field code this is the $2^{51}$-in, $2^{52}$-out pattern of
+Chapter~\ref{ch:rust}'s worked example.)
+
+Run the Chapter~\ref{ch:honesty} substitution test before proving
+anything: would ``return $(0,0)$ always'' pass? Bounds clause: yes.
+Value clause: no --- $a = (1,0), b = (0,0)$ gives $1 \neq 0$. The spec
+has teeth. Now we earn it.
+
+\section*{I.3 \quad The bounds clause, proved by hand}
+
+Assume $\mathrm{Bnd}(a)$, $\mathrm{Bnd}(b)$; so
+$a_0, a_1, b_0, b_1 \le 3$. Chase every intermediate through its
+interval:
+\[
+\begin{array}{lclcl}
+s_0 &=& a_0 + b_0 &\le& 3 + 3 = 6\\[2pt]
+\lfloor s_0/4 \rfloor &\le& \lfloor 6/4 \rfloor &=& 1\\[2pt]
+s_1 &=& a_1 + b_1 + \lfloor s_0/4 \rfloor &\le& 3 + 3 + 1 = 7\\[2pt]
+\lfloor s_1/4 \rfloor &\le& \lfloor 7/4 \rfloor &=& 1\\[2pt]
+{\code{add}}(a,b)_0 &=& s_0 \bmod 4 + \lfloor s_1/4 \rfloor &\le& 3 + 1 = 4 \;<\; 5 \quad✓\\[2pt]
+{\code{add}}(a,b)_1 &=& s_1 \bmod 4 &\le& 3 \;<\; 4 \quad✓
+\end{array}
+\]
+Done --- and notice the proof \emph{is} the headroom audit of
+Chapter~\ref{ch:why}, in miniature: every line asks ``how big can this
+intermediate get,'' and the two ✓ lines are the treaty the spec
+promised. Notice also that the bound $<5$ is \emph{tight}: at
+$a = b = (2, 3)$, $s_0 = 4$ folds a carry and $s_1 = 7$ folds another,
+giving low limb $0 + 1 = 1$\dots\ try $a = b = (3,3)$: $s_0 = 6$,
+$s_1 = 7$, output $(2 + 1, 3) = (3,3)$ --- hmm, low limb $3$. Exercise
+I.1 asks you to find the input that actually achieves $4$; it exists,
+and finding it will teach you more about tightness than ten theorems.
+
+\section*{I.4 \quad The value clause, proved by hand}
+
+The pathway (identical to the one you will use in Lean): first prove an
+\emph{exact integer identity} --- no mod, no hand-waving --- then let the
+clock face absorb the multiple of $15$.
+
+\textbf{Step 1: the division algorithm, twice.} For any naturals,
+$x = 4\lfloor x/4 \rfloor + (x \bmod 4)$. Apply to $s_0$ and $s_1$:
+\[
+s_0 = 4\lfloor s_0/4 \rfloor + (s_0 \bmod 4),
+\qquad
+s_1 = 4\lfloor s_1/4 \rfloor + (s_1 \bmod 4).
+\]
+
+\textbf{Step 2: compute the output's integer value, plus a correction.}
+Write $c_1 := \lfloor s_0/4 \rfloor$ (low carry) and
+$c_2 := \lfloor s_1/4 \rfloor$ (the folded top carry). The output's
+positional value is
+\[
+\begin{array}{lcl}
+\denote{\code{add}(a,b)}_{\Z}
+&=& \big( s_0 \bmod 4 + c_2 \big) + 4\,(s_1 \bmod 4)\\[3pt]
+&=& \big( s_0 - 4c_1 + c_2 \big) + 4\,( s_1 - 4 c_2 )
+    \qquad\text{(Step 1, both equations)}\\[3pt]
+&=& s_0 - 4c_1 + 4 s_1 - 15\, c_2\\[3pt]
+&=& s_0 - 4c_1 + 4\,( a_1 + b_1 + c_1 ) - 15\,c_2
+    \qquad\text{(definition of } s_1\text{)}\\[3pt]
+&=& (a_0 + b_0) + 4\,(a_1 + b_1) \;-\; 15\, c_2 .
+\end{array}
+\]
+Watch what happened in the last two lines: the low carry $c_1$
+\emph{cancelled exactly} --- $-4c_1$ against $+4c_1$ --- because a carry
+is value moved between positions, not value created; and the top carry
+survived only as $-15\,c_2$, because folding weight $16$ down to weight
+$1$ loses exactly $15$ per unit. The bookkeeping \emph{is} the
+arithmetic meaning of ``carry'' and ``fold,'' laid bare.
+
+\textbf{Step 3: pass to the clock face.} Reducing mod $15$, the term
+$15\,c_2$ vanishes:
+\[
+\denote{\code{add}(a,b)}
+\;=\; (a_0 + 4a_1) + (b_0 + 4b_1)
+\;=\; \denote{a} + \denote{b} \quad\text{in } \Zmod{15}. \qquad\blacksquare
+\]
+The value clause is proved --- for \emph{every} bounded input, by three
+steps of eighth-grade algebra. You have now verified an arithmetic
+implementation by hand, completely: no case was sampled, no input
+untested, because no input was \emph{tested} at all. The quantifier came
+from algebra, not enumeration.
+
+\section*{I.4b \quad Multiplication's fold, by the same method}
+
+One more clause, to see the method survive a second operation. The toy
+multiplication (as in \code{exercises/Ch09.lean}) computes the three
+schoolbook columns and folds the top one:
+\[
+\code{mulVal}(a,b) := \underbrace{a_0 b_0}_{c_0} +
+\underbrace{a_1 b_1}_{c_2\ \text{(folded)}} +
+4\,\underbrace{(a_0 b_1 + a_1 b_0)}_{c_1},
+\]
+claim: $\denote{\code{mulVal}(a,b)} = \denote{a}\cdot\denote{b}$ ---
+this time with \emph{no bounds hypotheses at all}. Same three-step
+pathway, but Step 2's identity is now pure algebra. Expand the
+right-hand side:
+\[
+(a_0 + 4a_1)(b_0 + 4b_1)
+= a_0 b_0 + 4\,(a_0 b_1 + a_1 b_0) + 16\, a_1 b_1 .
+\]
+Compare with $\code{mulVal}$: the only mismatch is the top column's
+weight --- $16\,a_1 b_1$ there, $1 \cdot a_1 b_1$ here. So the exact
+integer identity is
+\[
+\code{mulVal}(a,b) + 15\, a_1 b_1 \;=\; (a_0 + 4a_1)(b_0 + 4b_1),
+\]
+--- verify it by cancelling the displayed expansions --- and Step 3
+kills the $15\,a_1 b_1$ on the clock face. $\blacksquare$
+
+Two observations before we translate. First, \emph{why} no bounds were
+needed: this theorem speaks only of values, and positional value is
+indifferent to digit discipline; bounds enter only when machine words
+must contain the intermediates (the toy \code{mulVal} returns a bare
+natural number --- the real \code{mul} returns limbs, and \emph{re-limbing
+is where its bounds clauses live}). Second, the correction term's shape:
+$15$ per unit of \emph{folded column}, exactly the ``cost of a fold''
+law from I.4 --- one law, two operations, and in the real system the
+same law reads ``$p$ per folded column,'' four times over
+(Chapter~\ref{ch:denotation}'s fold worked example).
+
+\section*{I.5 \quad The same proof, in Lean, line by line}
+
+Here is the machine version (it is
+\code{solutions/Ch09.lean}, compiled and axiom-audited), interleaved
+with the paper steps it enacts:
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.47\linewidth}p{0.47\linewidth}@{}}
+\toprule
+\textbf{Paper (sections I.3--I.4)} & \textbf{Lean} \\
+\midrule
+unpack the four digit bounds &
+\lean{obtain ⟨ha1, ha2⟩ := ha} \dots \\
+\addlinespace[3pt]
+the interval chase of I.3 &
+\lean{simp only [add]; omega} \\
+\addlinespace[3pt]
+Steps 1--2: the exact integer identity, carries cancelling ---
+stated with the $15 c_2$ correction on the left &
+\lean{have key : (add a b).1 + 4*(add a b).2 + 15*(...) = ...  := by simp only [add]; omega} \\
+\addlinespace[3pt]
+Step 3: cast to $\Zmod{15}$; the $15$ becomes $0$ &
+\lean{push_cast at this;} \lean{rw [show (15 : ZMod 15) = 0 by decide]} \\
+\addlinespace[3pt]
+``\dots{} $= \denote{a} + \denote{b}$. $\blacksquare$'' &
+\lean{simp only [denote]; linear\_combination this} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Read the correspondence twice, because it is the book's whole method in
+one table. The interval chase you did line-by-line is one \lean{omega}
+call --- the machine \emph{decides} what you \emph{derived}, which is why
+Chapter~\ref{ch:automation} called these procedures contracts. The
+delicate part on paper --- Step 2's cancellation --- is delicate in Lean
+too: it is the \lean{key} identity, and getting its statement right
+(which correction term? on which side?) is where the human does the
+thinking in both media. Step 3 is bookkeeping in both media. The
+division of labor between you and the machine is the same division
+between insight and verification your paper proof already had.
+
+And now the punchline of the whole interlude: the field-layer proof of
+\code{dalek-ed25519-verified} is \emph{this proof} with five limbs
+instead of two, radix $2^{51}$ instead of $4$, fold constant $19$
+instead of $1$ (times the fold identity's bookkeeping), and five carry
+cancellations instead of one. Every step type --- interval chase, exact
+identity with correction term, cast and kill the modulus --- you have
+now executed by hand.
+
+\section*{Interlude exercises}
+
+\noindent{\bfseries\color{accent}Exercise I.1.}\ Find bounded inputs
+achieving the tight output bound: $\code{add}(a,b)_0 = 4$. (Systematic
+pathway: you need $s_0 \bmod 4 = 3$ \emph{and} a fold, $c_2 = 1$; work
+out what $s_0$ and $s_1$ must be, then pick digits realizing them.)
+
+\smallskip
+\noindent{\bfseries\color{accent}Exercise I.2.}\ Re-run the \emph{entire}
+I.3--I.4 proof for the variant system with radix $8$ and modulus $63$
+(so $64 \equiv 1$): two limbs $< 8$, denotation $a_0 + 8a_1$. Every step
+should transpose mechanically --- when one doesn't, you have found a
+place where you were pattern-matching instead of understanding; welcome,
+that is the exercise working.
+
+\smallskip
+\noindent{\bfseries\color{accent}Exercise I.3.}\ (Bridge to the real
+thing) In the I.4 cancellation, the low carry vanished and the top carry
+cost $15$ per unit. For the real radix-51 system: state what the
+analogous ``cost per unit of top carry'' is, and verify your answer
+against the fold identity of Chapter~\ref{ch:denotation}'s worked
+example.
+
+\smallskip
+\noindent{\bfseries\color{accent}Exercise I.4.}\ (The missing clause)
+Section I.4b's \code{mulVal} returns a bare number, not limbs --- so its
+theorem has a value clause but no bounds clause. Complete the design on
+paper: define $\code{relimb}(v) := (v \bmod 4 + \text{(fold)},\, \dots)$
+--- that is, re-express a value $v \le 90$ (the largest \code{mulVal}
+of bounded inputs --- verify this bound first!) as two limbs using the
+division algorithm and one fold. How many fold rounds does $v \le 90$
+need before both limbs are $< 4$? State the two-clause spec your
+$\code{relimb}$ would carry.
+
+\section*{Interlude solutions and pathways}
+\solutionsintro
+
+\solhead{I.1}
+\pathway Work backwards from the two requirements. $c_2 = 1$ needs
+$s_1 \ge 4$; $s_0 \bmod 4 = 3$ with a useful range of $s_0$: since
+$s_0 \le 6$, ``$s_0 \bmod 4 = 3$'' means $s_0 = 3$ (no carry out) --- so
+the fold must come entirely from $a_1 + b_1$.
+\answer Take $s_0 = 3$ (say $a_0 = 3, b_0 = 0$), no low carry; then
+$s_1 = a_1 + b_1 \ge 4$ (say $a_1 = b_1 = 2$, $s_1 = 4$): output low
+limb $= 3 + 1 = 4$. Concretely $a = (3,2)$, $b = (0,2)$:
+$\code{add} = (4, 0)$. Check the value clause holds anyway:
+$\denote{(4,0)} = 4$ and $\denote{a} + \denote{b} = 11 + 8 = 19 \equiv 4$
+✓ --- the bound is tight but the meaning is intact, which is exactly why
+the spec's bounds clause said $< 5$ and not $< 4$. (If you tried to
+strengthen the spec to $< 4$, this input is the counterexample the
+failed proof would point at --- Chapter~\ref{ch:pyramid}'s graduation
+exercise mechanism, met early.)
+
+\solhead{I.2}
+\pathway Transcribe I.3--I.4 replacing $(4, 15, 16)$ by $(8, 63, 64)$
+and the digit bound $3$ by $7$.
+\answer Bounds chase: $s_0 \le 14$, $c_1 \le 1$, $s_1 \le 15$,
+$c_2 \le 1$, output low $\le 7 + 1 = 8 < 9$, output high $\le 7 < 8$.
+Value identity: output value
+$= s_0 - 8c_1 + 8s_1 - 63\,c_2
+= (a_0 + b_0) + 8(a_1 + b_1) - 63\,c_2$ --- low carry cancels
+($-8c_1 + 8c_1$), top carry costs $64 - 1 = 63$ per unit, which
+vanishes mod $63$. Every step transposed; the only places requiring
+thought were the two spots where the old numbers were \emph{related}
+($15 = 16 - 1$ became $63 = 64 - 1$; $\lfloor 14/8 \rfloor = 1$ needed
+re-checking, not copying) --- and those two spots are precisely the
+design constraints of the system: fold constant $=$ radix$^2 - $modulus
+relation, and single-bit carries. Now you know which numbers in such a
+system are load-bearing.
+
+\solhead{I.3}
+\pathway In I.4 the cost was (weight folded from) $-$ (weight folded
+to) $= 16 - 1 = 15$ per unit of top carry. Transpose the weights.
+\answer The real system folds weight $2^{255}$ down to weight $2^{0}$
+\emph{with a factor of 19}: one unit of top overflow re-enters as $+19$
+instead of $+2^{255}$, so the correction is
+$2^{255} - 19 = p$ per unit --- the cost is exactly one prime $p$, which
+is why it vanishes mod $p$, and why the fold constant \emph{must} be
+$19$ and nothing else: it is the unique value making the correction a
+multiple of the modulus. Cross-check with the fold worked example:
+$2^{51(k+5)} \equiv 19 \cdot 2^{51k}$ says each folded column's
+correction is $2^{51k}(2^{255} - 19) = 2^{51k}\, p$ ✓. The toy's
+``$15$ per carry'' and the field's ``$p$ per carry'' are the same
+sentence at different type sizes --- carry the sentence with you into
+the next chapter.
+
+\solhead{I.4}
+\pathway Bound \code{mulVal} first by maximizing each column, then
+design \code{relimb} as ``split by the division algorithm, fold the
+overflow, repeat until in range,'' tracking the bound through each
+round exactly as I.3's chase did.
+\answer Bound: columns give $\le 9 + 9 + 4 \cdot 18 = 90$ ✓. One
+\code{relimb} round on $v$: limbs $(v \bmod 4 + \lfloor v/16 \rfloor,\;
+\lfloor v/4 \rfloor \bmod 4)$ --- value preserved mod $15$ since the
+fold costs $15$ per unit (I.4's law). Chase the bound: round one sends
+$v \le 90$ to $v' \le 3 + 5 + 12 = 20$; a value $< 16$ needs no fold
+and splits into two clean digits, so only $v' \in \{16, \dots, 20\}$
+needs a further round, which lands $\le 3 + 1 + 4 = 8 < 16$ ---
+\textbf{at most three rounds}, usually two. The spec your \code{relimb}
+carries is precisely the two-clause shape: (bounds) both output limbs
+$< 4$; (value) $\denote{\code{relimb}(v)} = v$ in $\Zmod{15}$. And now
+compose: $\code{relimb} \circ \code{mulVal}$ has a full multiplication
+spec, assembled from two lemmas --- which is, in miniature, exactly how
+the real \code{mul} proof is architected (fold theorem + carry-chain
+re-limbing), and why Chapter~\ref{ch:field}'s campaign put
+\code{reduce} before \code{mul}.
+
+\begin{checkpoint}
+You have now: proved both clauses of a two-clause spec with your own
+pen; watched each paper step map onto one Lean tactic; transposed the
+proof to a sibling system and located its load-bearing constants; and
+priced a fold in multiples of the modulus. The next chapter's campaign
+is this interlude at production scale --- when it feels big, return
+here and find the step type you are on.
+\end{checkpoint}

@@ -1,0 +1,177 @@
+\chapter{Guided Walkthroughs of the Exercise Files}
+\label{app:walkthroughs}
+
+The \code{exercises/} folder contains eight Lean files with \lean{sorry}
+holes; \code{solutions/} contains their completed twins (every one
+compiled, with no \lean{sorry}, against the pinned toolchain). This
+appendix is the middle path between the two: for every hole, the
+\emph{pathway} --- what to look at, what to try, where you will
+probably get stuck and why --- and then the resolution. Use it when a
+hole has genuinely defeated you; the file order follows the book.
+
+\section{Ch02.lean --- definitions by recursion}
+
+\textbf{\code{mul} (the Try It exercise).} Pathway: mirror \lean{add}'s
+skeleton --- the answer to ``\code{mul m} of \emph{how many}?'' is
+decided by the second argument's constructor. Base:
+$m \cdot 0 = 0$ (not $m$! --- evaluate your candidate on
+\lean{mul 3 0} before believing it). Step: $m \cdot (n+1) = m \cdot n +
+m$, i.e.\ \lean{mul m n + m}, using only \lean{+} as instructed.
+Common stall: writing \lean{mul m n + n} --- catches the wrong
+variable; the check \lean{mul 6 7 = 42} exposes it instantly
+($6 \cdot 7$ would come out as $49$... work out why: $7$ added $7$
+times).
+
+\textbf{\code{pow}.} Pathway: same skeleton, one level up the operation
+ladder --- \lean{pow b 0 = 1} (the empty \emph{product}), step
+multiplies by \lean{b}. The deliberate lesson: \lean{add}, \lean{mul},
+\lean{pow} are the same two-line shape with different base
+cases/combinators --- iteration all the way up. \textbf{\code{fib}.}
+The two-base-case pattern \lean{| 0}, \lean{| 1}, \lean{| n + 2} is
+new; Lean happily recurses on \emph{both} predecessors because the
+pattern \lean{n + 2} makes both \lean{n + 1} and \lean{n} structurally
+smaller. \textbf{\code{Rational.add}.} Direct transcription of
+$\frac{a}{b} + \frac{c}{d} = \frac{ad + cb}{bd}$ with anonymous
+constructor syntax \lean{⟨num, den⟩}; the type-level lesson (what
+\emph{can't} be enforced) is in the chapter solutions.
+
+\section{Ch03.lean --- term-mode logic}
+
+The file's discipline (no tactics) makes every hole a smallish program.
+The reliable procedure for all six: (1) unfold the connectives into
+arrow/pair/tagged-union shape; (2) write \lean{fun} for every arrow in
+the goal; (3) inside, build the result with \lean{And.intro} /
+\lean{Or.inl} / \lean{Or.inr} / projections / application. Where people
+actually stall: \lean{or_swap} --- the urge is to project (\lean{h.1})
+out of a disjunction, which is a type error since only one side exists;
+the resolution is \lean{match h with | Or.inl p => ... | Or.inr q =>
+...}, and the arms must \emph{swap the tags}. And
+\lean{not_not_intro} --- stare at the unfolded type
+\lean{P → (P → False) → False} until you see it is \emph{modus ponens
+with the arguments flipped}: \lean{fun p f => f p}. If a hole
+type-checks but feels like luck, re-run the Chapter~\ref{ch:pat} worked
+example's hand-check on your own term --- that skill is the file's real
+deliverable.
+
+\section{Ch04.lean --- tactic mode, own addition}
+
+The file defines \lean{myAdd} (recursion on the second argument) so
+the standard library cannot spoil the induction. \textbf{\code{and_swap}}:
+warm-up per the chapter --- \lean{intro h; constructor; · exact h.2;
+· exact h.1}. \textbf{\code{zero_myAdd}}: the worked example's board
+trace, executed: \lean{induction n with}; zero case \lean{rfl}; succ
+case \lean{simp only [myAdd]; rw [ih]}. The stall here is almost always
+\emph{unfolding}: if the goal shows \lean{myAdd 0 (k + 1)} and nothing
+seems to apply, remember \lean{simp only [myAdd]} unfolds one
+definitional layer --- then the \lean{ih} rewrite site becomes visible.
+\textbf{\code{succ_myAdd}}: same shape exactly; prove it \emph{without}
+looking at the previous one, as calibration.
+\textbf{\code{myAdd_comm}}: induction on \lean{n}, then each case is a
+chain of the two lemmas you just proved plus \lean{ih}; if your rewrite
+chain grows past four steps, you are fighting the wrong induction
+variable. \textbf{\code{calc_repair}}: the broken step is the last
+(\lean{6 * b}); fix the arithmetic, and note \emph{how} you found it ---
+the error message pointed at the exact line whose sides differ, which
+is the maintenance experience of Chapter~\ref{ch:field} in one line.
+
+\section{Ch05.lean --- ten goals, right tool each}
+
+The file rejects overkill by intent; the classification procedure is
+Chapter~\ref{ch:automation}'s table. G1, G2, G6, G10: linear (constants
+multiply variables) $\to$ \lean{omega}. G3, G8: ring identities $\to$
+\lean{ring}. G4, G7: concrete numerals $\to$ \lean{norm_num}. G5:
+finite decidable $\to$ \lean{decide}. G9 is the file's teeth --- the
+two-step pattern: \lean{have hab : a * b < 100 * 100 :=
+Nat.mul_lt_mul'' ha hb} then \lean{omega}. The realistic stall is
+finding the lemma name: use \lean{exact?} on the \lean{have}'s goal and
+let the library search work for you --- that, too, is a skill the file
+is deliberately installing.
+
+\section{Ch06.lean --- clock worlds}
+
+The \lean{\#eval}s at the top are answered in the solutions file ---
+predict before running, especially \lean{(4⁻¹ : ZMod 12)}, whose junk
+answer ($1$ --- \emph{not} an inverse; check $4 \cdot 1$) teaches the
+totality convention. \textbf{6.A}: \lean{ring} --- the modulus is
+irrelevant to a ring identity. \textbf{6.B}: \lean{decide} --- twelve
+cases. \textbf{6.C}: the same \lean{decide} \emph{fails} at modulus
+$13$; the witness it implicitly found is $x = 10$
+(\lean{\#eval (4⁻¹ : ZMod 13)}). \textbf{6.D}: two stalls by design ---
+the \lean{Fact (Nat.Prime 11)} instance must exist before the Fermat
+lemma applies (the file provides it; understand why it is needed ---
+typeclass search cannot prove primality, it can only \emph{look up}
+registered facts), and the library lemma gives \lean{a \textasciicircum{} (11 - 1) = 1},
+which \lean{simpa} normalizes to \lean{a \textasciicircum{} 10 = 1}. \textbf{6.E}: the
+reduction identity --- the solution routes through
+\lean{ZMod.natCast_self p} ($p$ becomes $0$ on its own clock) plus a
+\lean{norm_num}-checked equation $p + 19 = 2^{255}$; if you tried
+\lean{decide}, you have discovered the kernel-cost lesson of
+Chapter~\ref{ch:prime} experimentally.
+
+\section{Ch07.lean --- the certificate ladder}
+
+\textbf{7.A}: \lean{decide} --- fast at two digits. \textbf{7.B}: try
+\lean{decide}, feel the pause, switch to \lean{norm_num}; both are
+honest, one is wiser. \textbf{7.C}: \lean{norm_num} \emph{after}
+converting the goal to a literal with
+\lean{show Nat.Prime 2147483647} --- the extension pattern-matches on
+numerals, a real-tool wrinkle worth having met in a safe place.
+\textbf{7.D}: the missing \lean{\#eval}s are \lean{(2:ZMod 13)\textasciicircum{}6}
+(expect $12$) and \lean{(2:ZMod 13)\textasciicircum{}4} (expect $3$) --- hand-check
+against Card~5 of Appendix~\ref{app:toolkit}. \textbf{7.E}: the
+\lean{powModAux} hole wants exactly the recipe in its comment ---
+\lean{if e = 0 then acc else powModAux fuel (b*b \% m) (e/2) (if e \% 2
+= 1 then acc*b \% m else acc)} --- mind the argument order matching the
+signature. The sanity \lean{\#eval}s catch the two classic slips
+(squaring the accumulator; forgetting the final odd-bit multiply).
+Then the finale prints \lean{1} at 77 digits in milliseconds, and you
+have \emph{built} the tool the whole chapter was about.
+
+\section{Ch09.lean --- the miniature bridge}
+
+\textbf{9.A \code{denote}}: one line ---
+\lean{(a.1 : ZMod 15) + 4 * (a.2 : ZMod 15)}; the casts matter (the
+addition must happen \emph{on the clock face}, not in \lean{Nat}).
+\textbf{9.B \code{add_spec}}: follow the Interlude, which is precisely
+this proof on paper. Bounds clause: \lean{simp only [add]; omega}.
+Value clause --- the one genuine difficulty in the file --- state the
+exact integer identity with its correction term:
+\lean{have key : (add a b).1 + 4 * (add a b).2 + 15 * ((a.2 + b.2 +
+(a.1 + b.1) / 4) / 4) = (a.1 + 4*a.2) + (b.1 + 4*b.2)}, discharge with
+\lean{simp only [add]; omega}, then cast
+(\lean{push_cast}), kill the modulus
+(\lean{rw [show (15 : ZMod 15) = 0 by decide]}), and close with
+\lean{linear_combination this}. If your \lean{key} won't close, your
+correction term is wrong --- recompute $c_2$ on paper (Interlude Step
+2); \lean{omega}'s refusal is, as always, a counterexample pointing at
+the boundary. \textbf{9.C \code{mulVal_spec}}: same cast-and-kill
+scaffold, but the integer identity is pure algebra ---
+\lean{mulVal a b + 15 * (a.2 * b.2) = (a.1 + 4*a.2) * (b.1 + 4*b.2)}
+by \lean{ring} --- and \emph{no bounds hypotheses are needed}, a fact
+worth noticing (denotation does not care about digit discipline; only
+machine words do).
+
+\section{Ch12.lean --- graduation}
+
+\textbf{Task 1} is supposed to fail: run the 9.B proof shape against
+\lean{add'} and watch \lean{omega} refuse the \lean{key} identity ---
+because it is false. \textbf{Task 2}: extract the counterexample from
+the refusal: the divergence is $\lfloor s_0/5 \rfloor \neq
+\lfloor s_0/4 \rfloor$, which within bounds happens only at $s_0 = 4$;
+realize it with $a = (2,0)$, $b = (2,0)$ and confirm
+\lean{denote (add' (2,0) (2,0))} $= 0 \neq 4$. \textbf{Task 3}: change
+\lean{s0 / 5} to \lean{s0 / 4}; the 9.B proof now goes through
+verbatim --- run it and read the moral out loud: \emph{the proof failed
+exactly while the code was wrong and succeeded exactly when it was
+fixed}. \textbf{Task 4} wants the Chapter~\ref{ch:pyramid} reflection
+in your own words; the solutions file has a model paragraph, but yours
+counts double if it mentions which \emph{specific} tests you would have
+had to write to catch $s_0 = 4$ by accident --- and how many you
+actually wrote.
+
+\medskip
+\noindent That is the last hole in the last file. If you worked them
+all: the companion repositories' open scalar-layer lemmas are shaped
+exactly like 9.B --- bigger constants, same bones --- and the
+\code{CONTRIBUTING} notes there will treat you as what you now are:
+someone who has done this before.

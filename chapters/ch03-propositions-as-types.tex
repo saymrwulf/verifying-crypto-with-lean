@@ -92,6 +92,39 @@ theorem imp_trans (P Q R : Prop) : (P -> Q) -> (Q -> R) -> (P -> R) :=
   fun pq qr => fun p => qr (pq p)
 \end{lstlisting}
 
+\begin{worked}{type-checking a proof by hand --- being the kernel once}
+When Lean accepts \lean{and_swap}, what does it actually \emph{do}? It
+type-checks the term --- and you can replay that check on paper, which is
+the single best way to make Curry--Howard stop feeling like a slogan. The
+term is \lean{fun h => And.intro h.2 h.1}; the claimed type is
+\lean{P ∧ Q → Q ∧ P}. A type-checker works by walking the term and
+maintaining a \emph{context} of what each variable is assumed to be ---
+write the context on the left of a $\vdash$, the judgment on the right:
+\[
+\begin{array}{ll}
+\text{1.} & \text{Goal: } \vdash \mathtt{fun\ h} \Rightarrow \dots \;:\; P \wedge Q \to Q \wedge P\\[2pt]
+\text{2.} & \text{A \lean{fun} against an arrow type: put the argument in
+             the context.}\\
+          & h : P \wedge Q \;\vdash\; \mathtt{And.intro}\ h.2\ h.1 \;:\; Q \wedge P\\[2pt]
+\text{3.} & \text{\lean{And.intro} needs a proof of } Q \text{ and a proof of } P
+            \text{ (in that order, to build } Q \wedge P\text{).}\\[2pt]
+\text{4.} & h : P \wedge Q \;\vdash\; h.2 : Q \qquad\text{✓ (second component
+            of a conjunction)}\\
+\text{5.} & h : P \wedge Q \;\vdash\; h.1 : P \qquad\text{✓ (first component)}\\[2pt]
+\text{6.} & \text{All leaves check; the term has the claimed type. QED.}
+\end{array}
+\]
+Every step is a bookkeeping rule --- ``\lean{fun} eats an arrow,''
+``application must match the function's argument type,'' ``\lean{.1}
+projects a pair.'' No inspiration occurred anywhere, which is the entire
+point: \emph{checking} a proof is mechanical (a few thousand lines of
+kernel), while \emph{finding} it is the creative act. Now deliberately
+break it: try to check \lean{fun h => And.intro h.1 h.2} against the same
+type. Step 4 demands $h.1 : Q$, but the context gives $h.1 : P$ ---
+mismatch, rejected. A wrong proof does not check; you have just watched
+soundness happen at the level where it lives.
+\end{worked}
+
 \begin{aha}
 If you have ever composed two functions, you have already done everything
 this proof does. The intimidating part of formal logic --- ``natural
@@ -116,6 +149,43 @@ Chapter~\ref{ch:lean}, arrives at \lean{2}, and sees that both sides are
 mechanism --- \emph{definitional equality} --- is the engine that lets proofs
 lean on programs, and later lets us prove facts about extracted Rust code by,
 in part, just running it symbolically.
+
+\begin{worked}{watching \lean{rfl} compute --- and watching it get stuck}
+Both halves of the \lean{rfl} story fit on one sheet of paper, using the
+\lean{add} equations from Chapter~\ref{ch:lean} (recursion on the second
+argument; $s$ for successor). First, the success. To check
+\lean{1 + 1 = 2}, the kernel normalizes both sides:
+\[
+1 + 1 \;=\; \mathtt{add}\ s(z)\ s(z)
+\;=\; s(\mathtt{add}\ s(z)\ z)
+\;=\; s(s(z))
+\;=\; 2 .
+\]
+Two rewrite steps, both forced by the definition, and the two sides become
+\emph{the same term} --- \lean{rfl} applies. Nothing about this argument
+used the smallness of $1$: for \lean{2\textasciicircum{}255 - 19} the same normalization
+runs on the efficient binary representation and succeeds just as surely
+(only your patience is finite, not the principle).
+
+Now the failure, on the same sheet. To check \lean{0 + n = n} for a
+\emph{variable} $n$, the kernel again tries to normalize the left side:
+\[
+\mathtt{add}\ z\ n \;=\; ?
+\]
+Which defining equation applies? The first needs the second argument to be
+$z$; the second needs it to be $s(\cdot)$. But $n$ is \emph{opaque} --- an
+arbitrary variable exhibits neither constructor. No equation fires, the
+term is stuck, the two sides stay different terms, \lean{rfl} fails. Note
+precisely what failed: not the \emph{truth} of the statement (it is true
+for every concrete $n$, and each instance --- \lean{0 + 5 = 5}, say ---
+normalizes fine), but computation's ability to see it \emph{uniformly}.
+Whenever a variable blocks the recursion pattern, computation ends and
+\emph{induction} must take over --- now you can predict, before trying,
+which equalities are \lean{rfl}s. Test yourself: \lean{n + 0 = n}?
+(Second argument is the concrete $z$ --- first equation fires ---
+\lean{rfl}.) \lean{n * 1 = n}? Depends on which argument \lean{mul}
+recurses on; go read your Chapter~\ref{ch:lean} solution and decide.
+\end{worked}
 
 \begin{pitfall}
 \lean{rfl} proves $2^{255} - 19$-sized computations happily, but it can only
@@ -143,6 +213,38 @@ returns a proof of \lean{P n} --- one uniform recipe covering all the
 infinitely many cases at once. This is precisely the thing testing could not
 give us in Chapter~\ref{ch:why}: testing produces finitely many
 \lean{P 3, P 17, P 42}; a proof produces the function.
+
+\begin{worked}{a universal statement as one uniform recipe}
+Feel the difference between testing and proving on the smallest
+interesting universal: \emph{every number of the form $n + n$ is even},
+where $\mathrm{even}(m) := \exists k,\, m = 2k$. The testing mind
+samples: $3 + 3 = 6 = 2\cdot 3$ ✓, $7 + 7 = 14 = 2 \cdot 7$ ✓, and after
+a while believes. The proving mind writes \emph{one function}:
+\[
+\text{given any } n, \text{ return the witness } k := n
+\text{ together with the fact } n + n = 2n .
+\]
+That is the entire proof --- a recipe that, \emph{handed any} $n$,
+produces the evidence for \emph{that} $n$: for $n = 3$ it yields witness
+$3$ and the equation $6 = 6$; for $n = 2^{254}$ it yields witness
+$2^{254}$ just as cheaply, because the recipe never looks at the digits.
+In Lean:
+\begin{lstlisting}[language=Lean]
+theorem add_self_even : ∀ n : Nat, ∃ k, n + n = 2 * k :=
+  fun n => ⟨n, (Nat.two_mul n).symm⟩
+\end{lstlisting}
+Read the term against the table: \lean{fun n =>} consumes the $\forall$
+(a function, as promised); \lean{⟨n, ...⟩} produces the $\exists$ (a
+witness paired with evidence). Now the punchline for this book: every
+correctness certificate in the companion repositories has exactly this
+shape --- \lean{∀ a b, Bnd a → Bnd b → ∃ c, ...} --- a function that
+eats \emph{arbitrary} 255-bit inputs and manufactures the evidence for
+them. When Chapter~\ref{ch:why} said proofs cover $10^{153}$ input pairs
+at once, this recipe-not-samples mechanism is \emph{how}. No induction
+was even needed here; when the recipe does need to consult the
+structure of $n$, induction (Chapter~\ref{ch:tactics}) is how a recipe
+consults structure.
+\end{worked}
 
 Dually, \lean{exists n, P n} is proved by handing over a concrete witness
 together with evidence: \lean{Exists.intro 4 pf}. And remember the
@@ -197,6 +299,85 @@ you just wrote.}
 \exercise{(Thought) Explain to a skeptical friend why a type with no
 constructors is the right representation of falsehood --- and what would go
 wrong with the whole edifice if someone added a constructor to it.}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{3.1}
+\pathway Draw the shapes before writing the term. You \emph{have} a
+nested pair $((p,q),r)$; you \emph{owe} $(p,(q,r))$. The projections
+\lean{.1}/\lean{.2} take pairs apart; \lean{And.intro} puts them together;
+the whole proof is re-parenthesizing a package. Chase each component: where
+does $p$ live inside the input? At \lean{h.1.1}.
+\answer
+\begin{lstlisting}[language=Lean]
+theorem and_assoc' : (P ∧ Q) ∧ R → P ∧ (Q ∧ R) :=
+  fun h => And.intro h.1.1 (And.intro h.1.2 h.2)
+\end{lstlisting}
+Read it back as prose: ``from $((p,q),r)$, produce $(p,(q,r))$.'' If your
+version has the components in a different arrangement, type-check it by
+hand as in the worked example --- exactly one arrangement survives step 4.
+
+\solhead{3.2}
+\pathway A disjunction is a \emph{tagged} value --- you cannot project both
+sides out of it (only one exists!), so the projection style of 3.1 is
+unavailable. The only way to consume \lean{P ∨ Q} is case analysis: handle
+each tag. In term mode that is a \lean{match} with two arms; each arm
+holds evidence for one side and must rebuild the output disjunction with
+the \emph{other} tag.
+\answer
+\begin{lstlisting}[language=Lean]
+theorem or_swap : P ∨ Q → Q ∨ P :=
+  fun h => match h with
+    | Or.inl p => Or.inr p
+    | Or.inr q => Or.inl q
+\end{lstlisting}
+Note the tag flip: evidence that arrived tagged ``left'' leaves tagged
+``right'' and vice versa. The compiler checks \emph{exhaustiveness} ---
+delete an arm and the proof is rejected, because a case of reality would
+be unhandled. Compare with \lean{and_swap}: same theorem shape, entirely
+different evidence plumbing. The connective dictates the program.
+
+\solhead{3.3}
+\pathway Unfold the abbreviation twice.
+$\lnot P = P \to \mathtt{False}$, so
+$\lnot\lnot P = (P \to \mathtt{False}) \to \mathtt{False}$. The goal
+$P \to \lnot\lnot P$ is therefore
+$P \to (P \to \mathtt{False}) \to \mathtt{False}$: two arguments --- a
+proof and a refuter --- and you must produce \lean{False}. There is exactly
+one way to get a \lean{False}: apply the refuter.
+\answer
+\begin{lstlisting}[language=Lean]
+theorem not_not_intro : P → ¬¬P :=
+  fun p f => f p
+\end{lstlisting}
+The one-sentence description: \emph{``given evidence $p$ and any would-be
+refutation $f$ of $P$, feed $p$ to $f$ --- the refutation defeats
+itself.''} It is modus ponens wearing a philosophy costume. (The converse,
+$\lnot\lnot P \to P$, is \emph{not} writable in this plain style --- you
+would have to conjure a $p$ out of a function that only consumes them.
+That is the constructive/classical boundary of the last section, met in
+the wild.)
+
+\solhead{3.4}
+\pathway Recall what a proof of \lean{False} would be --- a value of the
+empty type --- and follow the consequences of the type not being empty
+anymore.
+\answer (Model answer.) ``Falsehood must be the proposition with \emph{no
+evidence}: if you could construct a proof of \lean{False}, `proof' would
+stop meaning anything. In this system that is not a moral claim but a
+structural one --- \lean{False} is an inductive type with zero
+constructors, so no closed term of that type exists. Every other
+proposition's strength derives from this emptiness: $\lnot P$ means
+$P \to \mathtt{False}$, and the principle `from \lean{False}, anything'
+is safe precisely because its premise is unreachable. Add one constructor
+\lean{oops : False} and watch the edifice fall: \lean{False.elim oops}
+now proves \emph{every} proposition --- $1 = 2$, `this code is correct,'
+everything --- and every certificate ever checked becomes worthless
+simultaneously. The kernel's whole job is to be the thing that never lets
+\lean{oops} in.'' Connect this forward: Chapter~\ref{ch:honesty}'s
+\lean{\#print axioms} audit is, at bottom, checking that nobody smuggled
+in an \lean{oops} dressed as an axiom.
 
 \begin{checkpoint}
 You should now be able to: translate each logical connective into its type

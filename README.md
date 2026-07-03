@@ -22,9 +22,10 @@ sources:
 
 ## The book
 
-**[`main.pdf`](main.pdf)** — twelve chapters, ~50 pages, full color, built
-with LaTeX/TikZ from the sources in this repo. No prior Lean or formal
-methods assumed; high-school algebra and a little programming suffice.
+**[`main.pdf`](main.pdf)** — twelve chapters + interlude + three
+appendices, 106 pages, full color, built with LaTeX/TikZ from the sources
+in this repo. No prior Lean or formal methods assumed; high-school algebra
+and a little programming suffice.
 
 1. **Why Verify?** — the carry bug testing cannot find
 2. **Meet Lean** — programs, types, inductive data
@@ -35,14 +36,32 @@ methods assumed; high-school algebra and a little programming suffice.
 7. **Primality Certificates** — convincing a paranoid kernel a 77-digit number is prime
 8. **From Rust to Lean** — the Charon/Aeneas extraction pipeline
 9. **The Denotation Bridge** — the commuting square at the heart of it all
+   — ***Interlude*** — a complete verification, entirely by hand, then re-enacted in Lean line by line
 10. **Verifying a Field** — the full campaign, told honestly (including the crash)
 11. **Honesty and Axioms** — `#print axioms`, hollow certificates, trusted bases
 12. **The Pyramid** — group law, scalars, signatures, and where you come in
 
-Each chapter ends in exercises; boxed **Big idea / Try it / Pitfall / Aha /
-Checkpoint** elements carry the didactic load. Everything the book claims
-about the companion projects reflects their actual, auditable state —
-including open frontiers.
+Appendices: **A** — the pen-and-paper toolkit (recipe cards with drills);
+**B** — guided walkthroughs of every exercise-file hole; **C** — a tour of
+the real repositories. Plus a glossary and a thirteen-week course plan.
+
+The didactic machinery, deliberately heavy:
+
+- **Pen-and-paper worked examples in every chapter** — computations with
+  the *real* constants (2²⁵⁵−19, radix 2⁵¹, the fold constant 19, the
+  actual 254-squaring inversion chain, the true Pratt tree
+  p−1 = 2²·3·65147·Q), because the real numbers carry the real arguments.
+  Highlights: inverting 19 modulo the 77-digit prime in five lines of
+  Euclid; a fully hand-checked primality certificate for 97; the ×19 fold
+  derived at the real weights; the 16p subtraction constant audited to the
+  bit (8 fails by 151); the complete Bernstein–Lange completeness chain.
+- **Solutions immediately after every exercise set** — each one leads with
+  the *pathway* (how a person finds the answer) before the answer itself.
+- Boxed **Big idea / Try it / Pitfall / Aha / Checkpoint** elements, TikZ
+  figures throughout.
+
+Everything the book claims about the companion projects reflects their
+actual, auditable state — including open frontiers.
 
 ## The exercises (they run!)
 

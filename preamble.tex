@@ -103,10 +103,12 @@
   aboveskip=1em, belowskip=1em,
 }
 % Inline code: plain styled text (robust in tables/footnotes, unlike lstinline).
+% Also safe inside math mode (wraps itself in \text there).
 % Unicode symbols in inline code are handled by the declarations below.
-\newcommand{\lean}[1]{{\ttfamily\small #1}}
-\newcommand{\rust}[1]{{\ttfamily\small #1}}
-\newcommand{\code}[1]{{\ttfamily\small #1}}
+\newcommand{\inlinecode}[1]{\ifmmode\text{\ttfamily\small #1}\else{\ttfamily\small #1}\fi}
+\newcommand{\lean}[1]{\inlinecode{#1}}
+\newcommand{\rust}[1]{\inlinecode{#1}}
+\newcommand{\code}[1]{\inlinecode{#1}}
 \DeclareUnicodeCharacter{2192}{\ensuremath{\to}}          % →
 \DeclareUnicodeCharacter{2190}{\ensuremath{\leftarrow}}   % ←
 \DeclareUnicodeCharacter{2194}{\ensuremath{\leftrightarrow}} % ↔
@@ -136,6 +138,14 @@
 \DeclareUnicodeCharacter{2082}{\ensuremath{{}_2}}         % ₂
 \DeclareUnicodeCharacter{00B2}{\ensuremath{{}^2}}         % ²
 \DeclareUnicodeCharacter{2075}{\ensuremath{{}^5}}         % ⁵
+\DeclareUnicodeCharacter{2713}{\ensuremath{\checkmark}}   % ✓
+\DeclareUnicodeCharacter{2717}{\ensuremath{\times}}       % ✗
+\DeclareUnicodeCharacter{207B}{\ensuremath{{}^{-}}}       % ⁻
+\DeclareUnicodeCharacter{00B9}{\ensuremath{{}^{1}}}       % ¹
+\DeclareUnicodeCharacter{00B3}{\ensuremath{{}^{3}}}       % ³
+\DeclareUnicodeCharacter{2070}{\ensuremath{{}^{0}}}       % ⁰
+\DeclareUnicodeCharacter{2074}{\ensuremath{{}^{4}}}       % ⁴
+\DeclareUnicodeCharacter{2076}{\ensuremath{{}^{6}}}       % ⁶
 
 % ---- pedagogical boxes: each means ONE thing ----------------------------
 % BIG IDEA — the load-bearing concept of a section.
@@ -175,7 +185,27 @@
 % double-bracket "denotation" delimiters without stmaryrd
 \newcommand{\denote}[1]{\ensuremath{[\mkern-3.3mu[ #1 ]\mkern-3.3mu]}}
 
+% WORKED EXAMPLE — pen and paper, with the real numbers.
+% Distinct look: white page, thick left margin rule like a notebook.
+\newtcolorbox{worked}[1]{enhanced,breakable,colback=white,colframe=ink2,
+  boxrule=0.4pt,leftrule=2.6pt,arc=1pt,left=10pt,right=10pt,top=8pt,bottom=8pt,
+  colbacktitle=codebg,coltitle=ink,
+  fonttitle=\bfseries,title={\pennib\ Pen and paper: #1}}
+\providecommand{\pennib}{\raisebox{-1pt}{\small$\angle$}}
+
 % exercises
 \newcounter{exc}[section]
 \newcommand{\exercise}[1]{\refstepcounter{exc}\smallskip\noindent%
   {\bfseries\color{accent}Exercise \thechapter.\theexc.}\ #1\smallskip}
+
+% solutions — immediately after each chapter's exercises.
+% Every solution leads with the PATHWAY (how to find it), then the answer.
+\newcommand{\solhead}[1]{\medskip\noindent%
+  {\bfseries\color{proven}Solution #1.}\ }
+\newcommand{\pathway}{\par\smallskip\noindent{\itshape\color{ink2}Pathway.}\ }
+\newcommand{\answer}{\par\smallskip\noindent{\itshape\color{ink2}Answer.}\ }
+\newcommand{\solutionsintro}{\noindent\begingroup\small\color{ink2}%
+Attempt every exercise before reading on --- a pathway teaches
+ten times as much after you have been genuinely stuck. Each solution
+below starts with the \emph{pathway} (how you find the answer) and only
+then the answer itself.\endgroup\par\medskip}

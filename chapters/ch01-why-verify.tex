@@ -24,6 +24,43 @@ than the square of the number of atoms in the observable universe. Testing
 samples a raindrop from that ocean.
 \end{pitfall}
 
+\begin{worked}{feel what $2^{-64}$ means, with the real numbers}
+Claims about astronomical improbability deserve to be checked by hand, so
+check this one. A failure probability of $2^{-64}$ per random input means
+you expect one hit per $2^{64}$ trials. First, get $2^{64}$ into scientific
+notation the way you always can: $\log_{10} 2 \approx 0.30103$, so
+\[
+\log_{10} 2^{64} = 64 \times 0.30103 \approx 19.27
+\qquad\Longrightarrow\qquad
+2^{64} \approx 1.8 \times 10^{19}.
+\]
+At $10^9$ tests per second, the expected waiting time is
+\[
+\frac{1.8 \times 10^{19}}{10^{9}} = 1.8 \times 10^{10} \text{ seconds}.
+\]
+A year is $\approx 3.15 \times 10^{7}$ seconds (a number worth memorizing:
+``$\pi \times 10^7$ seconds per year'' is accidentally almost exact), so
+\[
+\frac{1.8 \times 10^{10}}{3.15 \times 10^{7}} \approx 580 \text{ years}.
+\]
+So: a test farm hammering this function a \emph{billion} times per second,
+started when Copernicus published, would be expected to see the bug for the
+first time about now. And this is the \emph{optimistic} case where failing
+inputs are hit by uniform sampling --- for carry bugs they are typically
+\emph{correlated}, clustered in corners uniform sampling underweights.
+
+Now the input space itself. A single \lean{FieldElement} is 255 bits; a
+pair is 510 bits, and
+\[
+\log_{10} 2^{510} = 510 \times 0.30103 \approx 153.5
+\qquad\Longrightarrow\qquad
+2^{510} \approx 10^{153}.
+\]
+For comparison, the number of atoms in the observable universe is around
+$10^{80}$. Testing all pairs is not ``hard''; it is not a thing that
+happens in this universe.
+\end{worked}
+
 Why does cryptographic code have bugs of exactly this shape? Because of how it
 must be written. To be fast and resistant to timing attacks, real
 implementations represent a 255-bit number in several machine-word
@@ -33,6 +70,36 @@ as possible. The rare inputs where a deferred carry finally overflows are
 precisely the inputs no test generator stumbles on. The bug lives in the gap
 between ``the arithmetic we meant'' and ``the arithmetic we wrote,'' and that
 gap is only visible on a set of inputs of measure nearly zero.
+
+\begin{worked}{where exactly the danger zone sits --- the headroom budget}
+You can locate the habitat of every delayed-carry bug with one line of
+arithmetic, using the real Ed25519 parameters. The implementation stores a
+field element as five limbs, each meant to carry $51$ bits of payload, in
+$64$-bit machine words. The slack between payload and word is the
+\emph{headroom}:
+\[
+64 - 51 = 13 \text{ bits of headroom per limb.}
+\]
+Adding two elements limb-wise adds their limbs, so a freshly reduced limb
+(value $< 2^{51}$) can absorb additions --- but each addition can roughly
+double the limb, i.e.\ spend up to one bit of headroom. How many lazy
+additions before a limb can reach the $64$-bit cliff? We need
+\[
+k \cdot (2^{51}-1) \;<\; 2^{64}
+\qquad\Longleftrightarrow\qquad
+k \;\le\; \frac{2^{64}}{2^{51}} = 2^{13} = 8192 .
+\]
+So the code may skip carry propagation for thousands of additions --- a huge
+performance win --- \emph{provided someone, somewhere, is counting}. The
+2014-species bug is precisely a miscount: a code path where the running
+total of spent headroom exceeds the budget on inputs shaped just so. Notice
+what kind of fact the budget is: a \emph{quantified arithmetic invariant}
+(``for all reachable values, limb $< 2^{51+j}$ after $j$ additions'') ---
+exactly the kind of statement a test cannot establish and a proof assistant
+eats for breakfast. When Chapter~\ref{ch:field} makes ``bounds clauses''
+feel bureaucratic, remember this box: the bounds clause \emph{is} the
+headroom count, and the headroom count is where the bodies were buried.
+\end{worked}
 
 And in cryptography, ``rare wrong answer'' does not mean ``rare small
 glitch.'' Wrong field arithmetic can leak private keys: several published
@@ -205,6 +272,69 @@ state in order to exclude it?}
 three firms every year; formal verification is redundant.'' Name one class of
 defect audits are better at than proofs, and one class where proofs are
 strictly stronger.}
+
+\exercise{Redo the headroom budget for a hypothetical radix-$26$
+representation on $32$-bit words (ten limbs of $26$ bits for a 255-bit
+value, a real design used on small CPUs). How many bits of headroom per
+limb? How many lazy additions fit in the budget? Compare with the
+radix-51/64-bit numbers and state which design must reduce more often.}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{1.1}
+\pathway The only inputs that reveal the bug form a set of size $1$ inside
+a set of size $2^{510}$, so a uniformly random test hits it with
+probability $2^{-510}$; expected number of trials is $2^{510}$ (waiting
+time of a geometric distribution). Then it is the Chapter-1 conversion
+drill: powers of two $\to$ powers of ten $\to$ seconds $\to$ universes.
+\answer Expected trials $2^{510} \approx 10^{153.5}$. At $10^9$ per second:
+$10^{153.5 - 9} = 10^{144.5}$ seconds. Divide by the age of the universe,
+$4 \times 10^{17}$ s:
+\[
+\frac{10^{144.5}}{4 \times 10^{17}} \approx 10^{126.9}
+\quad\text{--- about } 10^{127} \text{ universe-ages.}
+\]
+Any answer within a few orders of magnitude is ``correct'': the lesson is
+that no engineering factor (faster farms, smarter fuzzing schedules) dents
+a number with $127$ digits of margin.
+
+\solhead{1.2}
+\pathway Pick a bug whose trigger was a \emph{property of the input}, not a
+coding typo --- those are the ones a spec excludes. Then ask: what is the
+universally quantified sentence that is false in the buggy program?
+\answer (Model answer.) A JSON parser that crashed on deeply nested arrays
+survived a big test suite: no test nested past depth $50$. The
+specification that excludes it must \emph{quantify over all inputs}:
+``for every input string, the parser terminates and returns either a value
+or a well-formed error'' --- termination-for-all is exactly what the tests
+never said. The general shape to remember: test suites assert
+$P(x_1), \dots, P(x_n)$; specifications assert $\forall x,\, P(x)$; bugs
+live in the gap.
+
+\solhead{1.3}
+\pathway Sort defect classes by \emph{whether their badness is expressible
+as a violated formal property of the code}. Audits see things that are not
+properties of the code; proofs cover input space no human can.
+\answer Audits win at: flaws in the \emph{specification itself} and its
+surroundings --- wrong protocol choice, misuse-prone APIs, side channels
+outside the model, deployment and key-handling practice. A proof of the
+wrong spec passes; a good auditor smells that the spec is wrong. Proofs are
+strictly stronger at: input-space coverage for the stated property ---
+carry bugs, overflow corners, algebraic edge cases on a measure-zero slice.
+The honest synthesis: audits examine the \emph{claim}, proofs guarantee the
+\emph{claim's body}. A serious system wants both, aimed at their targets.
+
+\solhead{1.4}
+\pathway Same two lines as the worked example, new constants: headroom
+$= \text{word} - \text{radix}$; budget $= 2^{\text{headroom}}$.
+\answer Headroom $32 - 26 = 6$ bits, so at most $2^{32}/2^{26} = 2^{6} =
+64$ lazy additions --- against $8192$ for radix-51/64-bit, a budget $128$
+times tighter. The radix-26 design must interleave reductions far more
+often, and its correctness argument has $128$ times less slack for
+miscounting --- one concrete reason ports of crypto code to small targets
+are disproportionately bug-prone, and why per-fork verification
+(Chapter~\ref{ch:field}) is not paranoia.
 
 \begin{checkpoint}
 Before moving on, you should be able to explain to a friend:

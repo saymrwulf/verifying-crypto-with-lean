@@ -45,7 +45,64 @@ cases for doubling, no branch for the identity, hence constant-time-friendly
 code with no rarely-taken paths for bugs to hide in. (The proof, due to
 Bernstein and Lange, is a jewel of quiet algebra: if a denominator vanished,
 $d$ would have to be a square in $\Fp$ --- and it is not, which is a
-\lean{decide}-scale fact away from primality.) Second, the implementation
+\lean{decide}-scale fact away from primality.)
+
+\begin{worked}{the completeness argument, derived to its hinge}
+The Bernstein--Lange proof rewards a full pen-and-paper walk --- symbols,
+not toy numbers, because the argument \emph{is} the real one at every
+size. We run it on the Edwards curve $x^2 + y^2 = 1 + d x^2 y^2$ with
+$d$ a non-square (Ed25519's twisted form adds decorations; the skeleton
+is identical, and the exercises hand you the twist). Suppose, for
+contradiction, points $(x_1,y_1)$, $(x_2,y_2)$ on the curve make a
+denominator vanish: $\varepsilon := d\,x_1 x_2 y_1 y_2 \in \{\pm 1\}$.
+A product equal to $\pm 1$ has no zero factor, so all four coordinates
+are nonzero. Three moves, each checkable by expansion:
+
+\emph{Move 1 --- square the assumption.} From $\varepsilon^2 = 1$:
+$d^2 x_1^2 x_2^2 y_1^2 y_2^2 = 1$, which rearranges to
+\[
+1 \;=\; d x_1^2 y_1^2 \cdot d x_2^2 y_2^2 .
+\]
+
+\emph{Move 2 --- expand a well-chosen square.} Using
+$x_1^2 + y_1^2 = 1 + d x_1^2 y_1^2$ (the curve, point 1) and
+$\varepsilon x_1 y_1 = d x_1^2 y_1^2\, x_2 y_2$ (multiply the definition
+of $\varepsilon$ by $x_1 y_1$):
+\[
+(x_1 + \varepsilon y_1)^2
+= x_1^2 + y_1^2 + 2\varepsilon x_1 y_1
+= 1 + d x_1^2 y_1^2 + 2\, d x_1^2 y_1^2\, x_2 y_2 .
+\]
+
+\emph{Move 3 --- substitute Move 1's $1$ and factor.} Replace the
+leading $1$ by $d x_1^2 y_1^2 \cdot d x_2^2 y_2^2$ and pull out
+$d x_1^2 y_1^2$:
+\[
+(x_1 + \varepsilon y_1)^2
+= d x_1^2 y_1^2 \big( d x_2^2 y_2^2 + 1 + 2 x_2 y_2 \big)
+= d x_1^2 y_1^2 \big( x_2^2 + y_2^2 + 2 x_2 y_2 \big)
+= d\,\big(x_1 y_1 (x_2 + y_2)\big)^2 ,
+\]
+where the middle equality used the curve equation for point 2 backwards
+($1 + d x_2^2 y_2^2 = x_2^2 + y_2^2$). Now the hinge: if
+$x_2 + y_2 \neq 0$, divide ---
+\[
+d = \left( \frac{x_1 + \varepsilon y_1}{x_1 y_1 (x_2 + y_2)} \right)^{2},
+\]
+\textbf{$d$ is a square}. And if $x_2 + y_2 = 0$, rerun Moves 2--3 with
+$(x_1 - \varepsilon y_1)^2$ to get $d \cdot (x_1 y_1 (x_2 - y_2))^2$
+instead --- $x_2 - y_2$ cannot \emph{also} vanish (both would force
+$x_2 = y_2 = 0$). Either way $d$ is a square in $\Fp$. But Ed25519's $d$
+is \emph{not} --- one Legendre-symbol computation,
+$d^{(p-1)/2} \equiv -1 \pmod p$, checkable by exactly the
+square-and-multiply ladder of Chapter~\ref{ch:prime}, established once
+as a constant fact in the verified development. Contradiction; no
+denominator ever vanishes. Savor the architecture: one quadratic-residue
+bit about one constant buys the \emph{total absence of special cases}
+from every point addition ever executed --- and thereby the absence of
+the rarely-taken branches where Chapter~\ref{ch:why}'s bugs live. That
+is what ``a curve chosen for verifiability'' means in practice.
+\end{worked} Second, the implementation
 represents points \emph{projectively} (extended coordinates $(X:Y:Z:T)$,
 avoiding division entirely) --- so the layer has its own denotation,
 $(X:Y:Z:T) \mapsto (X/Z, Y/Z)$, and its own commuting squares built on the
@@ -63,6 +120,52 @@ exponents --- multiples of points --- so it is arithmetic mod $\ell$: a
 limbs, Montgomery multiplication) and its own denotation bridge. Nothing
 conceptually new --- which is itself the lesson: the method \emph{scales
 sideways} without new ideas.
+
+\begin{worked}{sizing the group --- real constants, three-line audits}
+The scalar layer's constants invite the same pen-and-paper audits as the
+field's. The group order is $8\ell$ with
+\[
+\ell \;=\; 2^{252} + 27742317777372353535851937790883648493 ,
+\]
+that $38$-digit tail being an inseparable companion of anyone who works
+on this layer. Three audits, each a few lines:
+
+\emph{(1) Consistency with the curve.} A theorem of Hasse says an
+elliptic curve over $\Fp$ has $p + 1 - t$ points with
+$|t| \le 2\sqrt{p}$ --- so about $2^{255}$ points, within
+$2^{128.5}$-ish. Check the claimed order:
+$8\ell = 2^{3} \cdot 2^{252} + 8 \cdot (38\text{-digit}) =
+2^{255} + (\text{a number} < 2^{129})$. Sits exactly in Hasse's window
+around $p + 1 \approx 2^{255}$ ✓. The claimed structure is at least
+arithmetically possible --- a thirty-second sanity check worth running on
+\emph{any} curve parameter set someone hands you.
+
+\emph{(2) The tail is not decoration.} Could a signature library
+``round'' $\ell$ to $2^{252}$ --- who would notice? Anyone reducing a
+$256$-bit hash output mod $\ell$: the reductions differ on roughly a
+$2^{-124}$ slice of inputs (the interval lengths differ by the tail), and
+the certified theorem \code{L\_val} in all four companion repos ---
+\emph{the transpiled constant equals $\ell$, digit for digit} --- exists
+precisely because ``a constant nobody can eyeball'' is where typos
+retire. The proof is one \lean{decide}-scale comparison, and it has
+teeth: change one digit of the Rust constant and \code{check-scalar.sh}
+fails.
+
+\emph{(3) Why the $8$s in the verification equation.} The full group has
+order $8\ell = 2^3 \cdot \ell$, so (by the structure of finite abelian
+groups) it decomposes as $\Z_8$-part $\times$ $\Z_\ell$-part: every point
+splits as $X = T + Y$ with $T$ of order dividing $8$ (``torsion'') and
+$Y$ of order dividing $\ell$. Multiply by $8$:
+\[
+8X \;=\; 8T + 8Y \;=\; \mathcal{O} + 8Y \;=\; 8Y
+\]
+--- the torsion component is annihilated, whoever chose it. An attacker
+who tampers with a public key by adding a small-order point $T$ changes
+$X$ but not $8X$; the cofactored equation $8sB = 8R + 8kA$ is therefore
+immune to a whole class of malleability games that the uncofactored
+$sB = R + kA$ is not. Three multiplications by $8$, bought by exactly the
+three-line computation above.
+\end{worked}
 
 The engineering, however, has a frontier, and this book has told you enough
 truth to locate it precisely. Scalar Montgomery multiplication mixes
@@ -124,6 +227,38 @@ Where to go from here, in increasing order of ambition:
   standard next doors.
 \end{itemize}
 
+\subsection*{Further reading, annotated}
+
+\begin{itemize}[leftmargin=1.4em]
+\item \emph{Theorem Proving in Lean 4} (Avigad, de Moura, et al.; free
+online) --- the official text. Read it \emph{after} this book's
+Chapters 2--5 and it will feel like meeting the extended family of
+ideas you already know; its dependent-type chapters go far beyond our
+needs and are worth the trip.
+\item \emph{Mathematics in Lean} (the Mathlib community course) ---
+hands-on Mathlib fluency: naming conventions, search strategies, the
+algebra hierarchy. The fastest cure for ``I know the fact exists but
+not its name,'' which will be your main bottleneck after this book.
+\item \emph{The Lean Zulip} (\code{leanprover.zulipchat.com}) --- where
+the community lives. Unusually welcoming to beginners; search before
+asking, then ask well: a minimal example plus the goal state gets
+expert answers in hours.
+\item Bernstein \& Lange, \emph{Faster addition and doubling on
+elliptic curves} (2007) --- the completeness proof this chapter's
+worked example walked; readable with this book's preparation, and a
+model of what ``designed for implementers'' mathematics looks like.
+\item The RFC for EdDSA (RFC 8032) --- the signature scheme as
+deployed, cofactor-$8$s and encoding details included. Read the
+verification equation section against this chapter and notice how much
+sharper your questions have become.
+\item Project Everest / HACL$^{*}$ and Fiat Crypto --- the two other
+major verified-crypto lineages (F$^{*}$-based and Coq-based
+respectively), both shipping in real TLS stacks and browsers. Reading
+their claims with your Chapter~\ref{ch:honesty} toolkit is instructive
+in both directions: the methods differ, the honest-boundary discipline
+rhymes.
+\end{itemize}
+
 \begin{aha}
 One last reframe, the one this book was secretly about. ``Formal
 verification'' sounds like bureaucracy --- forms, stamps, compliance. What
@@ -146,6 +281,93 @@ stuck goal state; (3) confirm by \lean{\#eval}; (4) fix the code and finish
 the proof. That arc --- spec, refusal, counterexample, fix, certificate ---
 is the entire profession in miniature. Welcome to it.
 \end{tryit}
+
+\section*{Exercises}
+
+\exercise{(Paper) Verify Move 2 and Move 3 of the completeness worked
+example by full expansion --- every term written out, nothing skipped.
+Then adapt the argument's \emph{first} move to the twisted curve
+$-x^2 + y^2 = 1 + d x^2 y^2$: where does the $-1$ enter, and why does the
+argument want $-1$ to be a \emph{square} mod $p$? (Hint: $p = 2^{255}-19
+\equiv 1 \pmod 4$, and for such primes $-1$ is a quadratic residue ---
+which is not an accident of the curve designers.)}
+
+\exercise{(Paper) In the group decomposition $X = T + Y$ (torsion of
+order dividing $8$ plus a $\Z_\ell$ component), verify: (a) $8X = 8Y$;
+(b) $8Y \neq \mathcal{O}$ whenever $Y \neq \mathcal{O}$ --- why does this
+need $\gcd(8, \ell) = 1$, and where does the argument use that $\ell$ is
+prime and $> 8$? (c) Conclude what an attacker who adds a small-order
+point to a public key changes, and what they provably cannot change.}
+
+\exercise{(Audit drill) Write down, from memory, the complete list of
+what the apex certificate will \emph{assume} (its trusted base) and what
+it will \emph{establish}, then check yourself against this chapter's
+apex section. Anything you forgot is the thing to reread before you
+audit a real system.}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{12.1}
+\pathway For the expansion: Move 2 is the binomial square plus two
+substitutions --- write $(x_1 + \varepsilon y_1)^2 = x_1^2 +
+2\varepsilon x_1 y_1 + y_1^2$, then replace $x_1^2 + y_1^2$ via the curve
+and $\varepsilon x_1 y_1$ via the definition. Move 3 is distributing
+$d x_1^2 y_1^2$ and recognizing a perfect square. For the twist,
+transport the curve equation and re-run Move 2.
+\answer Move 2 fully expanded:
+$(x_1+\varepsilon y_1)^2 = x_1^2 + 2\varepsilon x_1 y_1 + y_1^2$;
+curve gives $x_1^2 + y_1^2 = 1 + dx_1^2y_1^2$; and
+$\varepsilon x_1 y_1 = (d x_1 x_2 y_1 y_2)(x_1 y_1) = d x_1^2 y_1^2 x_2
+y_2$ --- sum the three pieces to get the displayed line ✓. Move 3:
+$d x_1^2 y_1^2 (d x_2^2 y_2^2 + 1 + 2 x_2 y_2)$; the curve for point 2
+says $1 + d x_2^2 y_2^2 = x_2^2 + y_2^2$, so the bracket is
+$x_2^2 + 2x_2y_2 + y_2^2 = (x_2+y_2)^2$, and
+$d x_1^2 y_1^2 (x_2+y_2)^2 = d (x_1 y_1 (x_2+y_2))^2$ ✓. For the twisted
+curve: $x_1^2 + y_1^2$ no longer appears --- the curve supplies
+$y_1^2 - x_1^2$ --- so the well-chosen square must mix a factor
+$\sqrt{-1}$ into the $x$'s (expand $(\sqrt{-1}\,x_1 + \varepsilon y_1)^2
+= -x_1^2 + y_1^2 + 2\varepsilon\sqrt{-1}\,x_1 y_1$: the curve's
+left-hand side appears exactly). That $\sqrt{-1}$ must \emph{exist} in
+$\Fp$ for the argument to run --- hence the requirement that $-1$ be a
+square, guaranteed by $p \equiv 1 \pmod 4$. The designers chose the
+twist $a = -1$ \emph{because} it is a square mod this $p$: speed came
+from the twist, completeness survived because of the residue class.
+Parameters this well-matched are chosen, not lucky.
+
+\solhead{12.2}
+\pathway All three parts are order bookkeeping: $nZ = \mathcal{O}$
+exactly when the order of $Z$ divides $n$.
+\answer (a) $8X = 8T + 8Y$; the order of $T$ divides $8$, so
+$8T = \mathcal{O}$, leaving $8Y$ ✓. (b) The order of $Y$ divides the
+prime $\ell$, so it is $1$ or $\ell$. If $Y \neq \mathcal{O}$ the order
+is $\ell$; then $8Y = \mathcal{O}$ would force $\ell \mid 8$ ---
+impossible since $\ell > 8$ (it is $\approx 2^{252}$). This is where
+both primality (order is $1$ or $\ell$, nothing between) and size come
+in; $\gcd(8,\ell) = 1$ is the compact way to say ``multiplying by $8$ is
+invertible on the $\Z_\ell$ part.'' (c) The attacker changes the point
+$X$ (so: byte-level equality checks, hashes of the key, uniqueness
+assumptions \emph{can} be affected --- real protocols have been bitten)
+but provably cannot change $8X$, hence cannot affect the truth value of
+any cofactored verification equation. The formal apex certificate
+inherits exactly this robustness, and the ``$8$'' in its statement is
+this exercise, immortalized.
+
+\solhead{12.3}
+\pathway Close the book. Write two columns: \emph{assumes} /
+\emph{establishes}. Then open the apex section and diff.
+\answer The list your memory should reproduce --- \emph{assumes}:
+(1) SHA-512 behaves as an ideal hash (axiomatized by design, in the
+trusted-base ledger); (2) the untranslatable SIMD point-multiplication
+backends meet their stated specs (documented, per fork); (3) the three
+standard Lean axioms; (4) the extraction pipeline preserves meaning
+(one tool, pinned versions). \emph{Establishes}: for every input in the
+bounds discipline, the extracted verification routine returns true
+\emph{iff} $8sB = 8R + 8\,H(R,A,m)\,A$ in the curve group --- with
+field arithmetic, group law, scalar arithmetic, and encoding each
+carried by its own kernel-checked layer below. If your two columns
+match this, you can audit a verification paper's abstract in ninety
+seconds --- which was the promise on the book's cover, kept.
 
 \begin{checkpoint}
 The book's ending is a beginning, so the final checkpoint is prospective:

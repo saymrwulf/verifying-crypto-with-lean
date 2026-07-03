@@ -41,6 +41,53 @@ only protects people who read it. \textbf{The one-command audit:} run
 buried. Make this reflex, and no verification claim can hide from you.
 \end{bigidea}
 
+\begin{worked}{reading three audit transcripts --- a training set}
+Here are three \lean{\#print axioms} outputs. Before reading the
+verdicts, write your own one-line assessment of each; the answers
+follow.
+
+\begin{lstlisting}
+-- Transcript A
+'fieldImplementation' depends on axioms:
+[propext, Classical.choice, Quot.sound]
+
+-- Transcript B
+'mulCorrect' depends on axioms:
+[propext, Classical.choice, Quot.sound, sorryAx]
+
+-- Transcript C
+'groupLawComplete' depends on axioms:
+[propext, Classical.choice, Quot.sound, edDenomNonzero]
+\end{lstlisting}
+
+\emph{Transcript A}: the standard trio and nothing else --- axiom-clean.
+Remaining questions are the human ones (is the \emph{statement}
+non-trivial? is the \emph{model} the shipping code?), but the logical
+ledger is closed.
+
+\emph{Transcript B}: \lean{sorryAx} is the placeholder axiom behind
+\lean{sorry} --- somewhere in this theorem's dependency tree an
+obligation was skipped, and the tree remembers even though the file that
+contains it may be ten imports away. This certificate is decorative,
+\emph{regardless of anything else about it}. (Note how cheap the
+detection was: the tool walked ten thousand dependencies so you didn't
+have to.)
+
+\emph{Transcript C}: the interesting one. A custom axiom,
+\lean{edDenomNonzero} --- from the name, someone \emph{assumed} the
+Edwards denominators are nonzero rather than proving completeness. Two
+possible worlds: it is declared in the trusted-base ledger with a
+justification (defensible --- but then why does
+Chapter~\ref{ch:pyramid} prove it from the non-squareness of $d$ with
+modest effort? suspicious laziness at best), or it is undocumented ---
+in which case the headline ``group law verified, complete addition!''
+is quietly assuming the very fact that makes completeness interesting.
+Your move as auditor: \lean{grep} for the axiom's declaration, check
+the ledger, and ask the vendor Chapter question (3). The general
+skill: \textbf{a custom axiom's \emph{name} tells you which claim to
+stop believing until shown the ledger entry.}
+\end{worked}
+
 \section{A field guide to hollow certificates}
 
 Compiling proofs can still be worthless. The four classic ways, in
@@ -71,6 +118,45 @@ says. The only detector is a human reading the \emph{statement} (never mind
 the proof) and asking: \emph{if the code were wrong, would this theorem
 fail?} For the trivial spec, the answer is no --- a buggy \code{mul}
 satisfies it identically.
+
+\begin{worked}{the substitution test --- executing ``would a wrong program pass?''}
+The italicized question deserves a mechanical procedure, because you will
+ask it of every certificate you ever audit. The procedure: \emph{invent
+the worst program of the right type, substitute it into the statement,
+and see whether the statement notices.} Run it on three candidate specs
+for field multiplication, with the adversarial implementation
+$\code{mul}_0 :=$ ``ignore the inputs, return the zero array.''
+
+\emph{Spec A (the trivial one):}
+$\forall a\, b,\ \exists c,\ \code{mul}\ a\ b = c$. Substitute
+$\code{mul}_0$: is there a $c$ with $\code{mul}_0\,a\,b = c$? Yes ---
+$c = (0,0,0,0,0)$, for every input. \textbf{Spec A holds for the
+adversary.} Verdict: empty.
+
+\emph{Spec B (existence-of-ok):}
+$\forall a\, b,\ \mathrm{Bnd}(a) \to \mathrm{Bnd}(b) \to
+\exists c,\ \code{mul}\ a\ b = \mathtt{.ok}\ c \wedge \mathrm{Bnd}(c)$.
+Substitute: $\code{mul}_0$ always returns \lean{.ok} of the zero array,
+and the zero array is certainly bounded. \textbf{Spec B holds for the
+adversary too.} Verdict: overflow-safety only --- honest as far as it
+goes, but a reader who took it for correctness was reading the title,
+not the theorem.
+
+\emph{Spec C (the commuting square):} add the clause
+$\denote{c} = \denote{a} \cdot \denote{b}$. Substitute and pick the
+one-line counterexample: $a = b = (1,0,0,0,0)$, so
+$\denote{a} \cdot \denote{b} = 1 \cdot 1 = 1$, while
+$\denote{\code{mul}_0\,a\,b} = \denote{(0,\dots,0)} = 0 \neq 1$ in
+$\Fp$. \textbf{Spec C refutes the adversary.} Verdict: this one has
+teeth.
+
+The test took four lines of substitution per spec and required no Lean at
+all --- it is a \emph{reading} skill. Note also what it is \emph{not}: it
+cannot certify a spec as strong (a cleverer adversary might slip through
+where $\code{mul}_0$ was caught); it is a smoke detector, not a proof.
+But every hollow certificate in the field-guide above fails it within a
+minute, which is a remarkable return on four lines of pen and paper.
+\end{worked}
 
 \textbf{4. The wrong model.} The proof is real, the spec is strong --- but
 the thing verified isn't the thing that ships: a hand-transcription
@@ -157,6 +243,110 @@ the claim. (You now know all five.)}
 \exercise{(Discussion) The trusted-base \lean{axiom} for SHA-512 and the
 smuggled \lean{axiom} for a hard lemma are the \emph{same language feature}.
 Articulate the difference in one sentence --- it is not technical.}
+
+\exercise{(Paper --- the substitution test, on the toy system) For the
+mini-arithmetic of Chapter~\ref{ch:denotation}'s exercises, a vendor
+ships: $\forall a\, b,\ \mathrm{Bnd}(a) \to \mathrm{Bnd}(b) \to
+\denote{\code{add}\,a\,b} + \denote{(0,0)} = \denote{\code{add}\,a\,b}$.
+It compiles; it is axiom-clean. Run the substitution test: does the
+buggy \lean{add'} of \code{exercises/Ch12.lean} pass this spec? What is
+the spec actually about?}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{11.1}
+\pathway For each species, ask \emph{where the defect physically lives}
+--- in a warning, in a dependency list, in the meaning of a statement, in
+the relation between artifact and world --- and match it to the tool that
+inspects that place.
+\answer (a) \lean{sorry}: detector is the compiler warning and
+\lean{sorryAx} in \lean{\#print axioms}; CI check: grep build output for
+\lean{uses 'sorry'} and fail (the companion repos' \code{check.sh} does
+exactly this --- warnings, unlike comments, cannot be spoofed by prose).
+(b) Smuggled axiom: detector is \lean{\#print axioms} on every shipped
+certificate; CI check: assert the output is exactly
+\lean{[propext, Classical.choice, Quot.sound]}, plus a source-level gate
+refusing \lean{axiom} declarations outside the sanctioned model
+directory. (c) Trivial spec: \emph{no mechanical detector} --- the
+substitution test, executed by a human reading the statement. (d) Wrong
+model: no mechanical detector either --- the replay test: can a stranger
+re-extract from pinned sources and reproduce the artifact? CI can
+\emph{support} it (pin versions, re-run extraction, diff), but the
+judgment ``this model is the shipping code'' remains human. The pattern
+of the answers: mechanical failures get mechanical detectors; semantic
+failures get disciplined humans. Budget your skepticism accordingly.
+
+\solhead{11.2}
+\pathway Apply the substitution test to your own strengthening: after
+each added clause, ask which adversarial implementation still passes.
+Stop when the only survivor is a correct one.
+\answer Stepwise. Start:
+$\exists c,\ \code{sub}\ a\ b = \mathtt{.ok}\ c$ --- passes for
+``return zero always.'' Add bounds hypotheses and propagation
+($\mathrm{Bnd54}$ on inputs, $\mathrm{Bnd56}(c)$): still passes for
+return-zero. Add the value clause
+$\denote{c} = \denote{a} - \denote{b}$: return-zero dies
+($a = (1,0,\dots), b = 0$ gives $1 \neq 0$), and so does every other
+wrong-value implementation, by definition. Final spec --- the full
+two-clause square:
+\[
+\mathrm{Bnd54}(a) \to \mathrm{Bnd54}(b) \to \exists c,\;
+\code{sub}\,a\,b = \mathtt{.ok}\,c \,\wedge\, \mathrm{Bnd56}(c)
+\,\wedge\, \denote{c} = \denote{a} - \denote{b}.
+\]
+Each clause pulls real weight: \lean{.ok} excludes panics/overflow, the
+bound feeds the next operation, the value equation carries correctness.
+Delete any one and re-run the substitution test to see what sneaks back
+in --- that exercise-within-the-exercise is the fastest way to internalize
+why all three clauses recur through the entire companion codebase.
+
+\solhead{11.3}
+\pathway Order the questions by how cheaply they kill a hollow claim:
+axioms first (one command), then sorries, then statement, then model,
+then reproducibility.
+\answer The five, in priority order, each with its required answer:
+(1) \emph{``What does \lean{\#print axioms} report on the headline
+theorems?''} --- exactly the standard trio, or each extra axiom
+documented in a trusted-base ledger. (2) \emph{``Does any shipped file
+contain \lean{sorry}, and does CI fail on the warning?''} --- no, and
+yes. (3) \emph{``Show me the exact statement of the main theorem''} ---
+it must contain a universally quantified value equation against an
+independent mathematical definition (substitution test on the spot).
+(4) \emph{``What artifact was verified, and how does it relate to the
+code you ship?''} --- a model extracted mechanically from the shipping
+sources, tool versions pinned. (5) \emph{``Can I reproduce the check?''}
+--- a one-command script re-extracts, re-compiles, re-audits. A vendor
+who answers all five without flinching is, empirically, not hiding
+anything --- and a vendor who stumbles on (3) has told you which chapter
+of this book to reread on the flight home.
+
+\solhead{11.4}
+\pathway Strip away everything technical --- both are \lean{axiom} ---
+and what remains is a relationship between author and reader.
+\answer One sentence: \emph{the trusted-base axiom is disclosed as a
+debt --- named, documented, and priced for the reader's own judgment ---
+while the smuggled axiom is disclosure's opposite: a debt hidden so the
+certificate can impersonate a stronger claim.} Same instruction to the
+kernel; opposite speech act to the human. (Which is why the audit
+command matters so much: it makes the speech act verifiable.)
+
+\solhead{11.5}
+\pathway Substitution test, by the book: does the statement mention the
+program's \emph{relationship to anything external}? Look closely at what
+appears on both sides of the equation.
+\answer \lean{add'} passes --- and so does every function of the correct
+type, including ``return $(3,1)$ always.'' The spec has the form
+$X + \denote{(0,0)} = X$ where $X := \denote{\code{add}\,a\,b}$ appears
+identically on both sides; since $\denote{(0,0)} = 0$, it reduces to
+$X + 0 = X$ --- a true fact \emph{about the field}, in which \code{add}
+occurs only as an inert label. The spec is about $\Zmod{15}$'s additive
+identity, dressed in the vendor's function name. This species ---
+\emph{true theorem, wrong subject} --- is the subtlest hollow
+certificate: it even survives a careless substitution test if you only
+check that the statement mentions \code{add}. The refined test: does the
+implementation appear on \emph{one side only} of an equation whose other
+side is independent of it? If it cancels, it was never being tested.
 
 \begin{checkpoint}
 You should now be able to: run and interpret the one-command audit; name

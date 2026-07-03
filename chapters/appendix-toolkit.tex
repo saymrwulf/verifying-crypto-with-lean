@@ -1,0 +1,186 @@
+\chapter{The Pen-and-Paper Toolkit}
+\label{app:toolkit}
+
+Every worked example in this book leaned on a small set of hand-computation
+techniques. This appendix collects them as recipe cards --- the reference
+you will reach for when auditing numbers in the wild, where there is no
+chapter telling you which trick applies. Each card ends with a
+thirty-second drill; answers close the appendix.
+
+\section{Card 1: powers of two into powers of ten}
+
+The single most-used conversion in cryptographic sanity-checking:
+\[
+\log_{10} 2 \approx 0.30103
+\qquad\Longrightarrow\qquad
+2^{n} \approx 10^{\,0.301\, n}.
+\]
+Anchor points worth memorizing outright: $2^{10} \approx 10^{3}$ (the
+``kibi $\approx$ kilo'' fact, $2.4\%$ off), $2^{20} \approx 10^{6}$,
+$2^{64} \approx 1.8 \times 10^{19}$, $2^{128} \approx 3.4 \times 10^{38}$,
+$2^{256} \approx 1.2 \times 10^{77}$. The last one explains the phrase
+``77-digit prime'' used throughout this book: $255 \times 0.301 = 76.8$,
+so $2^{255}$ has $77$ digits. For headline comparisons, two reference
+magnitudes: atoms in the observable universe $\sim 10^{80}$; age of the
+universe $\sim 4 \times 10^{17}$ seconds; and the accidental gem
+$1\ \text{year} \approx \pi \times 10^{7}$ seconds.
+
+\emph{Drill 1.} How many decimal digits does $\ell \approx 2^{252}$ have?
+And is $2^{130}$ more or fewer than the atoms in a kilogram of silicon
+($\sim 2 \times 10^{25}$)?
+
+\section{Card 2: reducing big powers with the modulus identity}
+
+To reduce $2^{N}$ modulo $p = 2^{255} - 19$: split off multiples of
+$255$ in the exponent and replace each $2^{255}$ by $19$:
+\[
+2^{N} = 2^{255 q + r} \equiv 19^{\,q} \cdot 2^{\,r} \pmod p .
+\]
+The same works in any system with an identity $R \equiv c$: powers of the
+radix fold down by repeated substitution. Keep the numbers honest by
+reducing intermediate results whenever they exceed the modulus.
+
+\emph{Drill 2.} Reduce $2^{511} \bmod (2^{255} - 19)$ to a product of
+small numbers. (Split $511 = 2 \cdot 255 + 1$.)
+
+\section{Card 3: small-field residues via little Fermat}
+
+To find $M \bmod q$ for gigantic $M = 2^{N}$ and small prime $q$: reduce
+the \emph{exponent} mod $q - 1$ (Fermat: $2^{q-1} \equiv 1 \bmod q$),
+then compute the small remaining power. Used in
+Chapter~\ref{ch:modular}'s worked example to get
+$p \bmod 19$ from $255 = 14 \cdot 18 + 3$.
+
+\emph{Drill 3.} Compute $p \bmod 7$ for $p = 2^{255} - 19$. ($2^3 \equiv
+1 \bmod 7$, so reduce the exponent mod $3$.)
+
+\section{Card 4: extended Euclid, back-substitution form}
+
+To invert $a$ modulo $n$: run remainders downward
+($n, a, r_1, r_2, \dots, 1$), then walk back up expressing $1$ in terms
+of each pair. The Chapter~\ref{ch:modular} worked example is the
+template; the discipline that prevents errors is to write each line as
+$1 = (\text{coeff}) \cdot x + (\text{coeff}) \cdot y$ with both terms
+visible before substituting the next level. Sanity-check the final line
+by multiplying it out --- thirty seconds that catches ninety percent of
+slips.
+
+\emph{Drill 4.} Find $7^{-1} \bmod 15$ by back-substitution (two lines),
+and check by multiplication.
+
+\section{Card 5: square-and-multiply, tabular form}
+
+To compute $w^{e} \bmod n$ by hand: build the squares
+$w, w^2, w^4, w^8, \dots$ (each line: square the previous, reduce),
+then multiply together the squares selected by the binary digits of $e$.
+Bookkeeping form used in Chapter~\ref{ch:prime}'s certificate check:
+one column of exponents, one column of reduced values; never carry an
+unreduced number to the next line. Cost: $\lfloor \log_2 e \rfloor$
+squarings plus (ones in $e$'s binary) $- 1$ multiplies --- knowing the
+cost formula lets you \emph{decline} hand computations that are too big,
+which is itself a toolkit skill.
+
+\emph{Drill 5.} Compute $3^{22} \bmod 23$ by the tabular method
+($22 = 16 + 4 + 2$), and interpret the answer via Fermat.
+
+\section{Card 6: the headroom audit}
+
+For any limb design, three lines locate the overflow cliff:
+\[
+\text{headroom} = \text{word bits} - \text{radix bits}; \qquad
+\text{add budget} = 2^{\text{headroom}}; \qquad
+\text{mul check: } (\text{limb count}) \cdot 2^{2\cdot\text{bound bits}}
+\overset{?}{<} 2^{\text{wide word}} .
+\]
+Run all three whenever anyone shows you a limb representation ---
+Chapter~\ref{ch:why} (budget), Chapter~\ref{ch:automation} (mul check),
+and Chapter~\ref{ch:field}'s $16p$ audit are all instances.
+
+\emph{Drill 6.} A proposal uses radix-$29$ limbs in 32-bit words, nine
+limbs, 64-bit wide multiplies, bound $2^{31}$ after growth. Does the mul
+check pass?
+
+\section{Card 7: quadratic residues by the ladder}
+
+Is $a$ a square modulo an odd prime $p$? Euler's criterion decides:
+\[
+a^{(p-1)/2} \equiv
+\begin{cases}
++1 \pmod p & a \text{ is a square,}\\
+-1 \pmod p & a \text{ is not.}
+\end{cases}
+\]
+Compute the power by Card~5's ladder. Small-scale sanity check first
+--- $2$ modulo $7$: $2^{3} = 8 \equiv 1$, so $2$ \emph{is} a square mod
+$7$ (indeed $3^2 = 9 \equiv 2$; finding the root is genuinely harder
+than testing --- another find/check asymmetry). This card is
+load-bearing in Chapter~\ref{ch:pyramid}: completeness of the Ed25519
+addition law rests on ``$d$ is not a square,'' one Euler evaluation;
+and the twist's legitimacy rests on ``$-1$ \emph{is} a square mod
+$p$,'' which Euler settles by pure exponent parity:
+$(-1)^{(p-1)/2} = +1$ exactly when $(p-1)/2$ is even, i.e.\
+$p \equiv 1 \pmod 4$ --- true for $2^{255} - 19$ (check:
+$2^{255} \equiv 0 \pmod 4$, so $p \equiv -19 \equiv -3 \equiv
+1 \pmod 4$ ✓, no ladder required).
+
+\emph{Drill 7a.} Is $3$ a square mod $11$? ($3^5 \bmod 11$ by ladder;
+then find the root or trust the sign.)
+
+\section{Card 8: the substitution test (specs)}
+
+Given a claimed specification: substitute the worst implementation of
+the right type (``return zero,'' ``return the input,'' ``ignore
+arguments'') and evaluate the statement by hand. If the adversary
+passes, the spec is not about correctness. Refinement for equations: if
+the implementation appears identically on \emph{both} sides, it cancels
+and was never tested (Chapter~\ref{ch:honesty}, exercise 11.5).
+
+\emph{Drill 8.} Does the spec
+$\forall a b,\ \denote{\code{mul}(a,b)} = \denote{\code{mul}(b,a)}$
+survive the substitution test as a \emph{correctness} spec for
+multiplication?
+
+\section*{Drill answers}
+
+\solhead{Drill 1} $252 \times 0.301 = 75.9$: $\ell$ has $76$ digits.
+$2^{130} \approx 10^{39.1}$, vastly \emph{more} than $2 \times 10^{25}$
+atoms --- brute force over $130$-bit keys loses to physics, not just to
+patience.
+
+\solhead{Drill 2} $2^{511} = (2^{255})^2 \cdot 2 \equiv 19^2 \cdot 2
+= 722 \pmod{2^{255}-19}$.
+
+\solhead{Drill 3} $255 = 3 \cdot 85$, so $2^{255} = (2^3)^{85} \equiv
+1^{85} = 1 \pmod 7$; and $19 = 2 \cdot 7 + 5 \equiv 5$, so
+$p \equiv 1 - 5 \equiv -4 \equiv 3 \pmod 7$.
+
+\solhead{Drill 4} $15 = 2 \cdot 7 + 1$, so $1 = 15 - 2 \cdot 7$
+directly: $7^{-1} \equiv -2 \equiv 13 \pmod{15}$. Check:
+$7 \cdot 13 = 91 = 6 \cdot 15 + 1$ ✓.
+
+\solhead{Drill 5} Squares mod $23$: $3^2 = 9$; $3^4 = 81 \equiv 12$;
+$3^8 = 144 \equiv 6$; $3^{16} = 36 \equiv 13$. Then
+$3^{22} = 3^{16} \cdot 3^{4} \cdot 3^{2} = 13 \cdot 12 \cdot 9$:
+$13 \cdot 12 = 156 \equiv 156 - 138 = 18$; $18 \cdot 9 = 162 \equiv
+162 - 161 = 1$. So $3^{22} \equiv 1 \pmod{23}$ --- which is Fermat's
+little theorem announcing itself ($22 = 23 - 1$), and incidentally the
+first condition of a Pratt witness check for $23$.
+
+\solhead{Drill 6} Products: $2^{31} \cdot 2^{31} = 2^{62}$; nine terms:
+$9 \cdot 2^{62} > 2^{3} \cdot 2^{62} = 2^{65} > 2^{64}$ --- \textbf{fails}
+by at least one bit. (Exactly: $9 \cdot 2^{62} = 2^{62} \cdot 9
+> 2^{64} \Leftrightarrow 9 > 4$ ✓ fails.) The design must either bound
+limbs more tightly than $2^{31}$, reduce more often, or accumulate in
+wider precision --- and now you can say so in a design review with three
+lines of arithmetic as your citation.
+
+\solhead{Drill 7a} $3^5 = 243 = 22 \cdot 11 + 1 \equiv 1 \pmod{11}$
+(ladder: $3^2 = 9$, $3^4 = 81 \equiv 4$, $3^5 = 4 \cdot 3 = 12 \equiv 1$)
+--- so $3$ \emph{is} a square mod $11$; indeed $5^2 = 25 \equiv 3$.
+
+\solhead{Drill 8} No. Substitute $\code{mul}_{c}(a,b) :=$ ``return the
+constant array $c$'': both sides become $\denote{c}$ --- the adversary
+passes. Commutativity-of-the-implementation is a \emph{symmetry} spec;
+symmetric garbage satisfies it. (Real correctness needs the other side
+of the square: $\denote{a} \cdot \denote{b}$, a quantity the
+implementation cannot influence.)

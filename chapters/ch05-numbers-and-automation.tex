@@ -43,6 +43,60 @@ the hypotheses in view) is simply not true. That property turns \lean{omega}
 into a \emph{statement-debugging} tool: if it refuses your ``obviously true''
 bound, go find the counterexample; there is one.
 
+\begin{worked}{when omega says no --- hunting the boundary by hand}
+Train the counterexample reflex on a real-shaped bound. Claim: ``if
+$a, b < 2^{51}$ then $a + b < 2^{52} - 2$.'' It \emph{sounds} safely true
+--- each term is below half of $2^{52}$, surely the sum clears the bar
+with room? \lean{omega} refuses. Instead of doubting the tool, hunt at the
+\emph{boundary}, because linear claims fail at corners of the allowed
+region: take both variables at their maximum, $a = b = 2^{51} - 1$. Then
+\[
+a + b \;=\; 2^{52} - 2
+\;\not<\; 2^{52} - 2 .
+\]
+The claim fails by exactly one at exactly one corner --- the true theorem
+is $a + b \le 2^{52} - 2$, or strictly $a + b < 2^{52} - 1$. Now recall
+Chapter~\ref{ch:why}: the carry bugs that motivated this book are
+precisely off-by-a-hair failures at corners of the input region that
+sampling never visits. The refusal of a decision procedure is the same
+boundary being found for you, before the code ships instead of after.
+Standing rule: \textbf{when \lean{omega} refuses a linear goal, the
+statement is wrong; evaluate the goal at the extreme values of every
+hypothesis, and one of those corners is your counterexample.}
+\end{worked}
+
+\begin{worked}{the bound-then-omega pattern at real field scale}
+Here is the exact arithmetic that stands between the Ed25519
+multiplication routine and a machine-word overflow --- the central safety
+computation of the whole field layer, fully pen-and-paper. The bounds
+discipline lets limbs grow to $a_i, b_j < 2^{54}$
+(Chapter~\ref{ch:rust}). Multiplication forms \emph{column sums} of limb
+products (Chapter~\ref{ch:denotation}); the widest column is
+\[
+c_4 \;=\; a_0 b_4 + a_1 b_3 + a_2 b_2 + a_3 b_1 + a_4 b_0
+\qquad\text{(five products).}
+\]
+The products land in $128$-bit words. Does $c_4$ fit? Work the exponents:
+\[
+a_i b_j \;<\; 2^{54} \cdot 2^{54} \;=\; 2^{108},
+\qquad
+c_4 \;<\; 5 \cdot 2^{108} \;<\; 2^{3} \cdot 2^{108} \;=\; 2^{111}
+\;<\; 2^{128}. \;\checkmark
+\]
+Margin: $128 - 111 = 17$ bits to spare --- room for the carry-in each
+column also absorbs. Every number in this computation is real: the $54$
+comes from the invariant, the $5$ from the limb count, the $128$ from the
+hardware. Change any one --- say a hypothetical radix-$58$ variant:
+$2 \cdot 58 = 116$, $5 \cdot 2^{116} < 2^{119}$, still fine; radix-$62$:
+$5 \cdot 2^{124} < 2^{127}$, one bit from the cliff --- and you can
+re-run the audit in your head. \emph{This} is what the automation
+divides between itself: \lean{a\_i * b\_j < 2\textasciicircum{}108} is the nonlinear atom you
+must name (one monotonicity lemma), and everything after it ---
+$5 \cdot 2^{108} < 2^{128}$ with the atom opaque --- is linear, which is
+to say, \lean{omega} food. The pattern in the pitfall below is this
+computation, industrialized.
+\end{worked}
+
 \begin{pitfall}
 \lean{omega} does not touch multiplication of two \emph{variables}
 ($a \cdot b$ is not linear), division in general, or bit-shifts by variables.
@@ -176,6 +230,82 @@ attempt.}
 this chapter proves in one shot, and sketch in prose how you would decompose
 it. (Anything genuinely inductive works --- automation here decides
 arithmetic fragments, not all of mathematics.)}
+
+\exercise{(Paper) Re-run the worked column-sum audit for the
+\emph{scalar} arithmetic of the companion projects, which uses radix-52
+limbs bounded by $2^{52}$ multiplied into $128$-bit words with
+\emph{nine}-term columns at the widest (schoolbook $5\times 5$, column
+$k=4$ has five terms, but the Montgomery pass adds four more products).
+Does $9 \cdot 2^{104}$ fit in $2^{128}$? With how many bits of margin?}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{5.1}
+\pathway For each goal, name the \emph{fragment} it lives in before naming
+a tactic: linear with constants? polynomial identity? concrete numerals?
+finite check? Then the table from this chapter is a lookup, not a guess.
+\answer
+(a) $(a+b)(a-b) = a\,a - b\,b$ over \lean{Int}: polynomial identity in a
+commutative ring $\to$ \lean{ring}. Succeeds. (Over \lean{Nat} it would be
+trickier --- truncated subtraction breaks ring reasoning; part of why the
+exercise says \lean{Int}.)
+(b) $a<100 \to b<100 \to ab < 10000$: \emph{nonlinear} (product of two
+variables) $\to$ no single tool from the table; needs the two-step
+pattern (5.2).
+(c) \lean{Nat.Prime 65537}: decidable, and small enough $\to$
+\lean{decide} works (with a noticeable pause); \lean{norm_num} is faster
+--- Chapter~\ref{ch:prime} explains the difference as certificate versus
+grind.
+(d) $2^{51} + 2^{51} = 2^{52}$: concrete numerals $\to$ \lean{norm_num}
+(or \lean{decide}; but build the habit of matching tool to fragment, not
+firing the biggest gun).
+
+\solhead{5.2}
+\pathway The product $ab$ is one opaque quantity as far as linear
+reasoning is concerned. So: (i) bound the atom with a monotonicity lemma
+--- both factors grow, so the product grows; (ii) hand the bounded atom to
+\lean{omega}. Finding the lemma name is part of the exercise:
+\lean{exact?} on the goal \lean{a * b < 100 * 100}, or search Mathlib for
+``mul\_lt\_mul''.
+\answer
+\begin{lstlisting}[language=Lean]
+example (a b : Nat) (ha : a < 100) (hb : b < 100) : a * b < 10000 := by
+  have hab : a * b < 100 * 100 := Nat.mul_lt_mul'' ha hb
+  omega
+\end{lstlisting}
+Two lines, and the division of labor is visible: the \lean{have} names the
+one nonlinear fact (with the lemma doing the monotonicity), then
+\lean{omega} finishes since \lean{100 * 100} is a numeral and \lean{a * b}
+is now an opaque atom below it. Under five minutes by the second attempt
+is a realistic bar --- this exact two-line shape appears \emph{dozens} of
+times in the field-layer proofs, with $2^{54}$ in place of $100$.
+
+\solhead{5.3}
+\pathway Look for statements whose truth genuinely needs induction ---
+i.e.\ not expressible in a decided fragment. Anything universally
+quantified over \emph{all} \lean{n} about a recursively defined function
+qualifies.
+\answer (Model answer.) $\forall n,\ \mathtt{fib}(n) < 2^n$ (with
+\lean{fib} from Chapter~\ref{ch:lean}). Not linear (contains \lean{fib}
+and $2^n$), not a ring identity, not concrete, not finite --- every tool
+in this chapter shrugs. Decomposition sketch: induction on $n$ with
+\emph{two} base cases ($n = 0, 1$) and a step using
+$\mathtt{fib}(n{+}2) = \mathtt{fib}(n{+}1) + \mathtt{fib}(n) <
+2^{n+1} + 2^n < 2^{n+2}$ --- where the \emph{final} inequality, with the
+induction hypotheses as opaque atoms, IS an \lean{omega} goal. That is the
+grown-up division of labor: induction supplies the skeleton, decision
+procedures clear each rib.
+
+\solhead{5.4}
+\pathway Same three lines as the worked example; only the constants move.
+\answer Products: $2^{52} \cdot 2^{52} = 2^{104}$. Nine terms:
+$9 \cdot 2^{104} < 2^4 \cdot 2^{104} = 2^{108} < 2^{128}$ --- fits, with
+$128 - 108 = 20$ bits of margin ($23$ if you count $9 < 2^{3.17}$ more
+tightly). The scalar layer breathes easier than the field layer's $17$
+bits, which matches how the two codebases feel to verify. When you meet
+the scalar Montgomery proofs in the companion repos, this margin
+computation is the first \lean{have} of every multiplication lemma.
 
 \begin{checkpoint}
 You should now be able to: match a goal to its decision procedure by the

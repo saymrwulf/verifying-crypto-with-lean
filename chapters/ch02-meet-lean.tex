@@ -119,6 +119,37 @@ def add : Nat -> Nat -> Nat
   | m, Nat.succ n => Nat.succ (add m n)
 \end{lstlisting}
 
+\begin{worked}{running the definition of addition by hand}
+The two equations of \lean{add} are a complete calculator; let us be the
+computer once, because every proof in Chapter~\ref{ch:tactics} secretly
+replays this trace. Abbreviate \lean{Nat.succ} as $s$ and \lean{Nat.zero}
+as $z$, so $3 = s(s(s(z)))$ and $2 = s(s(z))$. Compute
+$\mathtt{add}\ 3\ 2$; at each step exactly one equation applies, decided by
+the \emph{second} argument's outermost constructor:
+\[
+\begin{array}{lcl}
+\mathtt{add}\ 3\ s(s(z)) &=& s(\mathtt{add}\ 3\ s(z))
+   \qquad\text{(second equation, } n = s(z))\\
+ &=& s(s(\mathtt{add}\ 3\ z))
+   \qquad\text{(second equation, } n = z)\\
+ &=& s(s(3))
+   \qquad\text{(first equation)}\\
+ &=& s(s(s(s(s(z))))) \;=\; 5 .
+\end{array}
+\]
+Three observations to carry forward. (1) The recursion counts down the
+\emph{second} argument only --- the first is inert. That asymmetry is why
+\lean{n + 0 = n} will hold ``by computation'' while \lean{0 + n = n} will
+not (Chapter~\ref{ch:pat} makes this precise). (2) Each step is justified
+by \emph{matching a constructor} --- there is no arithmetic insight
+anywhere, just pattern matching, which is why a small, dumb kernel can
+check it. (3) The number of steps equals the second argument --- fine for
+$2$, comedy for $2^{255}$; Lean therefore \emph{stores} numerals in
+efficient binary and uses this unary skeleton only for \emph{reasoning}.
+Keep the two roles separate in your head: fast representation for
+computing, tiny inductive skeleton for proving.
+\end{worked}
+
 \begin{aha}
 Look at what just happened. Addition --- the operation at the bottom of every
 cryptosystem in this book --- is not an axiom or a CPU instruction here. It is
@@ -137,6 +168,70 @@ subtraction must mean subtraction, use \lean{Int}, or carry a hypothesis
 $b \le a$. Real verification projects hit this constantly: machine arithmetic
 wraps, truncates, and overflows, and the proofs must say so honestly.
 \end{pitfall}
+
+\begin{worked}{truncation meeting real cryptographic constants}
+Do not file the truncation pitfall under ``beginner trivia''; run it against
+the book's own constants. In the Ed25519 field code, subtraction of field
+elements must compute $a - b$ \emph{as integers would}, but the limbs live
+in \lean{Nat}-like unsigned words. Take the real situation: a fresh limb
+$a_0 < 2^{51}$ and a lazily-grown limb $b_0 < 2^{54}$
+(Chapter~\ref{ch:rust} explains how limbs grow). Then in \lean{Nat}:
+\[
+a_0 - b_0 \;=\; 0 \quad\text{whenever } b_0 > a_0
+\qquad\text{--- the true difference is simply gone.}
+\]
+Concretely: $a_0 = 2^{51} - 19$ (the low limb of $p$ itself!) and
+$b_0 = 2^{53}$: true difference $2^{51} - 19 - 2^{53} = -(3\cdot 2^{51} + 19)$,
+truncated result $0$. Any downstream carry chain silently absorbs the $0$
+and produces a well-formed, plausible, \emph{wrong} field element.
+
+The production fix (verified in Chapter~\ref{ch:field}) is to compute
+$a - b$ as $a + (16p - b)$: adding the multiple-of-$p$ constant $16p$ lifts
+every limb difference above zero \emph{before} subtracting, and the extra
+$16p$ vanishes modulo $p$. Check the crucial inequality yourself with the
+real numbers: the largest subtrahend limb allowed by the bounds discipline
+is $< 2^{54}$, and the smallest limb of the $16p$ constant is
+$16 \cdot (2^{51} - 19) = 2^{55} - 304$, so every limb of $16p - b$ is at
+least $2^{55} - 304 - (2^{54} - 1) = 2^{54} - 303 > 0$. No truncation, on
+any input --- and note that the argument needed $16p$: the same computation
+with $8p$ bottoms out at $2^{54} - 152 - (2^{54} - 1) = -151 < 0$, which
+\emph{can} truncate. One design constant, justified by three lines of
+pen-and-paper arithmetic you just verified.
+\end{worked}
+
+\begin{worked}{drawing the cost of a definition --- the \code{fib} call tree}
+A definition's \emph{meaning} and its \emph{cost} are different objects,
+and one drawing separates them forever. Take the naive recurrence
+$\mathrm{fib}(n{+}2) = \mathrm{fib}(n{+}1) + \mathrm{fib}(n)$ (exercise
+2.2) and draw the calls made by $\mathrm{fib}(5)$ as a tree, each node
+spawning its two recursive children:
+\[
+\begin{array}{c}
+\mathrm{fib}(5)\\
+\swarrow \qquad\qquad \searrow\\
+\mathrm{fib}(4) \qquad\qquad \mathrm{fib}(3)\\
+\swarrow\;\searrow \qquad\qquad \swarrow\;\searrow\\
+\mathrm{fib}(3)\;\;\mathrm{fib}(2) \qquad \mathrm{fib}(2)\;\;\mathrm{fib}(1)\\
+\dots
+\end{array}
+\]
+Count the visible duplication: $\mathrm{fib}(3)$ is computed twice,
+$\mathrm{fib}(2)$ three times, $\mathrm{fib}(1)$ five times --- the
+\emph{multiplicities are themselves Fibonacci numbers}, which you can
+prove by noticing that $\mathrm{fib}(k)$'s call count obeys the same
+recurrence as $\mathrm{fib}$ itself. Total calls for $\mathrm{fib}(n)$:
+$C(n) = 2\,F_{n+1} - 1$, exponential in $n$ --- the tree is a picture
+of the exponent. Two lessons travel with the picture. First, the
+\emph{value} $\mathrm{fib}(5) = 5$ is independent of the route: an
+efficient two-accumulator loop computes the same function, and
+``the same function'' is exactly the kind of statement Lean can
+\emph{prove} (equal outputs for all inputs) --- specs describe
+meaning, never cost. Second, this meaning/cost split is why
+Chapter~\ref{ch:prime} can let a slow-but-simple definition
+\emph{define} truth while fast code \emph{computes} it, with a theorem
+pinning them together --- the whole verified-crypto architecture in
+embryo, visible in a doodle of $\mathrm{fib}(5)$.
+\end{worked}
 
 \section{Structures: records with guarantees}
 
@@ -209,6 +304,83 @@ your algorithm is slow. The distinction matters when we later care about
 \lean{den : Nat}, and a function \lean{Rational.add}. What property of
 \lean{den} can your type \emph{not} enforce yet? (Keep your answer; Chapter~3
 gives you the tool to fix it.)}
+
+\exercise{(Paper) Using only the two defining equations of \lean{add},
+write out the full reduction trace of \lean{add 2 3} the way the worked
+example traced \lean{add 3 2}. How many steps does each take? State the
+general rule for the step count of \lean{add m n}.}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{2.1}
+\pathway Ask: which argument does the recursion consume? An exponent counts
+\emph{how many times} to multiply --- so recurse on it, exactly as
+\lean{add} recursed on ``how many times to take a successor.'' The base
+case is the empty product. If you wrote \lean{pow b 0 = 0}, evaluate
+\lean{pow 2 0} against your algebra ($b^0 = 1$) and let the mismatch teach
+the convention.
+\answer
+\begin{lstlisting}[language=Lean]
+def pow : Nat → Nat → Nat
+  | _, Nat.zero   => 1
+  | b, Nat.succ e => pow b e * b
+\end{lstlisting}
+\lean{\#eval pow 2 10} prints \lean{1024}. Every choice mirrors \lean{add}:
+recursion on the count, base case the operation's identity element ($0$ for
+$+$, $1$ for $\times$) --- a pattern you will reuse for iterated point
+addition in Chapter~\ref{ch:pyramid}.
+
+\solhead{2.2}
+\pathway The definition writes itself from the recurrence
+$F_{n+2} = F_{n+1} + F_n$ with two base cases. The interesting part is the
+pause, and it is worth quantifying rather than shrugging at: let $C(n)$
+count the calls needed for \lean{fib n}. Each call recurses twice, so
+$C(n) = C(n{-}1) + C(n{-}2) + 1$ --- the cost obeys (almost) the Fibonacci
+recurrence itself, hence grows like the golden ratio to the $n$.
+\answer
+\begin{lstlisting}[language=Lean]
+def fib : Nat → Nat
+  | 0 => 0
+  | 1 => 1
+  | n + 2 => fib (n + 1) + fib n
+\end{lstlisting}
+One can show $C(n) = 2\,F_{n+1} - 1$; for $n = 32$ that is
+$2 \cdot 3524578 - 1 \approx 7 \times 10^{6}$ calls to produce the
+seven-digit answer $F_{32} = 2178309$ --- the value is cheap, the
+\emph{route} is exponential. Hold on to the distinction: in verification we
+constantly separate \emph{what} a function computes (its spec) from
+\emph{how} (its cost and structure); this is your first taste of the two
+coming apart.
+
+\solhead{2.3}
+\pathway The formula $\frac{a}{b} + \frac{c}{d} = \frac{ad + cb}{bd}$
+transcribes directly; the sting is in the question. Try to build a value
+that should not exist.
+\answer
+\begin{lstlisting}[language=Lean]
+def Rational.add (x y : Rational) : Rational :=
+  ⟨x.num * y.den + y.num * x.den, x.den * y.den⟩
+\end{lstlisting}
+The type cannot enforce $\mathtt{den} \neq 0$: the value \lean{⟨1, 0⟩}
+constructs without complaint, and every function must now either handle it
+or silently misbehave on it. Chapter~\ref{ch:pat} adds a third field ---
+\emph{a proof} \lean{den ≠ 0} stored inside the value --- after which the
+bad value is not handled but \emph{unrepresentable}. The same move, scaled
+up, is the bounds-carrying field element of Chapter~\ref{ch:rust}.
+
+\solhead{2.4}
+\pathway Constructor of the second argument decides the equation; count
+how many times you use the second equation before the first fires.
+\answer
+$\mathtt{add}\ 2\ s(s(s(z))) = s(\mathtt{add}\ 2\ s(s(z)))
+= s(s(\mathtt{add}\ 2\ s(z))) = s(s(s(\mathtt{add}\ 2\ z)))
+= s(s(s(2))) = 5$: three uses of the second equation (one per \lean{succ}
+in the second argument), one of the first --- four steps. \lean{add 3 2}
+took three. In general \lean{add m n} takes $n + 1$ steps: $n$ unrollings
+plus the base case. The first argument never influences the step count ---
+it is along for the ride, which is precisely the asymmetry that will make
+\lean{0 + n = n} a theorem needing induction rather than a computation.
 
 \begin{checkpoint}
 You should now be able to: evaluate and type-check expressions with

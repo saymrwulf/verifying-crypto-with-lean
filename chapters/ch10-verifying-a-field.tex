@@ -58,6 +58,93 @@ arithmetic, blissfully ignorant of carries. That is the compositionality that
 Chapter~\ref{ch:denotation}'s two-clause specs (bounds + value) were designed
 to buy.
 
+\begin{worked}{why $16p$ --- auditing a design constant to the bit}
+Step 3's subtraction hides the field layer's most quotable design
+decision, and you can audit it completely. The problem: compute $a - b$
+limb-wise in unsigned words, where limbs of $b$ may be as large as
+$2^{54} - 1$ (the invariant's edge) while limbs of $a$ may be as small as
+$0$. Unsigned subtraction would truncate (Chapter~\ref{ch:lean}); the fix
+is to compute $a + (kp - b)$ for a suitable multiple $k$ of the prime ---
+denotationally free, since $kp \equiv 0$ --- chosen so that every limb of
+$kp - b$ stays positive. How large must $k$ be? The limb constants of
+$kp$ scale the telescoped representation from Chapter~\ref{ch:denotation}:
+\[
+kP = \big(k(2^{51}-19),\; k(2^{51}-1),\; k(2^{51}-1),\; k(2^{51}-1),\;
+k(2^{51}-1)\big),
+\]
+whose \emph{smallest} limb is $k(2^{51} - 19)$. Positivity of every limb
+of $kp - b$ demands
+\[
+k\,(2^{51} - 19) \;\ge\; 2^{54} - 1 .
+\]
+Try the candidates, because powers of two are what the code wants:
+\[
+k = 8:\quad 8(2^{51}-19) = 2^{54} - 152 \;<\; 2^{54} - 1
+\qquad\text{✗ fails, by 151;}
+\]
+\[
+k = 16:\quad 16(2^{51}-19) = 2^{55} - 304 \;\ge\; 2^{54} - 1
+\qquad\text{✓ with } 2^{54} - 303 \text{ to spare.}
+\]
+So $16$ is the \emph{least} power of two that works --- $8$ misses by a
+margin of $151$, invisible to any test that doesn't drive a limb of $b$
+within $151$ of the very top of its envelope. Two more checks complete
+the audit: the result's limbs are bounded by
+$2^{54} + 2^{55} < 2^{56} < 2^{64}$ (no overflow on the additive side ✓),
+and the denotation shifts by exactly $16p \equiv 0$ ✓. In the shipped
+proof this box is one lemma with three \lean{omega} obligations; in the
+git history of more than one real crypto library, the analogous constant
+is a patched CVE. Now you know how to tell which side of that line a
+codebase is on.
+\end{worked}
+
+\begin{worked}{verifying the inversion chain's bookkeeping --- all 265 steps}
+Step 6 sounds heroic --- verify a hand-crafted chain of $254$ squarings
+and $11$ multiplications computes $a^{p-2}$ --- until you see that the
+whole verification is \emph{exponent arithmetic}, and the exponents obey
+one identity you can check at every scale. The chain builds values
+$a^{e}$ for a cascade of exponents $e$; squaring doubles $e$, multiplying
+adds them. The dalek chain's opening moves:
+\[
+\begin{array}{lcl}
+z_2 = a^2 & & e = 2\\
+z_9 = (z_2)^{2^2} \cdot a & & e = 2\cdot 4 + 1 = 9\\
+z_{11} = z_9 \cdot z_2 & & e = 9 + 2 = 11\\
+z_{2^5-1} = (z_{11})^{2} \cdot z_9 & & e = 22 + 9 = 31 = 2^5 - 1 .
+\end{array}
+\]
+From $31 = 2^5 - 1$ the chain climbs by a doubling ladder whose single
+identity you should verify once symbolically:
+\[
+(2^k - 1)\cdot 2^k + (2^k - 1) \;=\; 2^{2k} - 1
+\qquad\text{(``shift a block of $k$ ones up by $k$ and fill'').}
+\]
+Check it at $k=5$: $31 \cdot 32 + 31 = 992 + 31 = 1023 = 2^{10}-1$ ✓.
+The ladder then assembles mixed blocks the same way:
+$2^{10}-1 \to 2^{20}-1 \to 2^{40}-1$, then
+$(2^{40}-1)2^{10} + (2^{10}-1) = 2^{50}-1$, then
+$2^{100}-1 \to 2^{200}-1$, then
+$(2^{200}-1)2^{50} + (2^{50}-1) = 2^{250}-1$. Final move: shift five and
+add the stashed $z_{11}$:
+\[
+(2^{250}-1)\cdot 2^{5} + 11 \;=\; 2^{255} - 32 + 11 \;=\; 2^{255} - 21
+\;=\; p - 2 . \qquad ✓
+\]
+Every line above is hand-checkable, and together they \emph{are} the
+correctness of the inversion chain --- modulo only ``squaring squares and
+multiplication adds exponents,'' which is the already-proven \code{mul}
+and \code{square} specs feeding Fermat (Chapter~\ref{ch:modular}). Count
+the cost while you are here. Squarings, stage by stage:
+$1$ (to $z_2$) $+\,2$ (to $z_9$) $+\,1$ (to $z_{31}$) $+\,5+10+20$ (to
+$2^{10},2^{20},2^{40}$) $+\,10$ (to $2^{50}$) $+\,50+100$ (to
+$2^{100},2^{200}$) $+\,50$ (to $2^{250}$) $+\,5$ (final shift)
+$= 254$. Multiplications: one per block-join --- count the ``$\cdot$''s
+above --- exactly $11$. The advertised $254 + 11$ is not folklore; you
+just audited it. That is the point of this box: ``verify 265 field
+operations'' collapsed into ten lines of exponent algebra a patient
+undergraduate audits over coffee.
+\end{worked}
+
 \section{Dispatches from the terrain}
 
 \textbf{The wall that was really there.} Partway up, one proof style hit a
@@ -74,6 +161,43 @@ tiny context, prove the value identity with \lean{linear_combination}
 searching for one), and let the big theorem be an assembly of small
 checked parts. The same discipline, plus hard memory caps on the checker
 process, became house infrastructure.
+
+\begin{worked}{the wall, quantified --- why the monolithic proof dies}
+The memory catastrophe is not mystical; you can estimate it on one page,
+and the estimate teaches the cure. When a decision procedure like
+\lean{omega} proves a linear goal, it does not just say ``true'' --- it
+emits a \emph{certificate}: a linear combination of the hypotheses with
+explicit integer coefficients that the kernel then re-checks
+(Chapter~\ref{ch:prime}'s find/check split, again). Now count what a
+\emph{monolithic} field-multiplication goal hands it. The goal relates
+quantities at wildly different scales: raw limbs ($\sim 2^{51}$), column
+sums ($\sim 2^{111}$), folded values ($\sim 2^{116}$), and the final
+positional stack, whose top weight is $2^{204}$ --- so eliminating
+variables across the whole system produces certificate coefficients up
+to the \emph{products} of these scales: numbers of order $2^{256}$ to
+$2^{512}$, i.e.\ integers of $80$--$150$ decimal digits. Per
+coefficient that is only tens of bytes --- but the elimination is
+quadratic-ish in the hypothesis count: with $\sim 60$ hypotheses (five
+limbs each for two inputs, nine columns, nine carries, plus bounds for
+everything), the certificate and the kernel's intermediate terms
+multiply into \emph{millions} of big-number nodes, each participating
+in further products. Twelve gigabytes is not even surprising once you
+draw the multiplication table of scales --- and this estimate, run
+\emph{before} the tactic, is how the wall gets predicted rather than
+hit.
+
+The cure now reads directly off the arithmetic: cut the elimination
+range. Prove each carry step as its \emph{own} lemma with only its own
+few hypotheses in scope (coefficients stay near the step's own scale);
+where a large linear identity is genuinely needed, state it yourself
+and let \lean{linear_combination} \emph{check} your stated certificate
+instead of searching for one (checking is cheap; finding at scale was
+the memory bomb). The companion repos' rule --- no blanket automation
+in fat contexts --- is this box, written as policy. And note the shape
+of the lesson: it is the \emph{same} headroom discipline as the code's
+(bound your intermediates, spend your budget consciously), applied one
+level up, to the proof itself.
+\end{worked}
 
 \begin{aha}
 There is a deep symmetry in that fix worth savoring: the \emph{proof} was
@@ -151,6 +275,68 @@ step's exponent is a sum of previous ones --- addition-chain arithmetic.)}
 verifies \code{square} separately from \code{mul}. A colleague argues
 ``square is just \code{mul a a}, reuse the theorem.'' What, concretely,
 would that argument miss about the code under verification?}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{10.1}
+\pathway Assemble from parts you own: the two-clause spec shape
+(Chapter~\ref{ch:denotation}), the multiple-of-$p$ freedom (the telescope
+worked example), and the positivity audit (this chapter's $16p$ worked
+example). The exercise is really asking you to \emph{compose} them into
+one statement.
+\answer The commuting square for \code{sub}, with the lemma named:
+\[
+\mathrm{Bnd54}(a) \to \mathrm{Bnd54}(b) \to
+\exists c,\; \code{sub}\,a\,b = \mathtt{.ok}\ c \;\wedge\;
+\mathrm{Bnd56}(c) \;\wedge\; \denote{c} = \denote{a} - \denote{b},
+\]
+resting on the lemma $\denote{16P} = 16p \equiv 0 \pmod p$ (the
+telescope, scaled by $16$), which justifies
+$\denote{a + (16P - b)} = \denote{a} + 0 - \denote{b}$. Why $16$ and not
+$p$ itself (i.e.\ $k = 1$): positivity of every limb of $kP - b$ requires
+the \emph{smallest} limb constant, $k(2^{51}-19)$, to dominate the
+\emph{largest} allowed limb of $b$, $2^{54}-1$; $k = 1$ gives
+$2^{51}-19 \ll 2^{54}$ --- hopeless --- and even $k = 8$ falls $151$
+short, as the worked example computed. First power of two that clears
+the bar: $16$.
+
+\solhead{10.2}
+\pathway Squaring doubles the exponent; multiplying adds. Track only
+exponents and check each claimed identity by substitution --- the field
+elements are irrelevant to the bookkeeping, which is the insight that
+makes the whole verification tractable.
+\answer $a^2$: exponent $2$ ✓ (one squaring).
+$a^9 = (a^2)^{2\cdot 2} \cdot a$: squaring $z_2$ twice gives exponent
+$2 \cdot 2 \cdot 2 = 8$; multiplying by $a$ adds $1$: exponent $9$ ✓
+(two squarings, one multiplication).
+$a^{11} = a^9 \cdot a^2$: $9 + 2 = 11$ ✓ (one multiplication).
+The induction that carries the rest: each ladder stage claims
+$(2^j - 1)\cdot 2^k + (2^k - 1) = 2^{j+k} - 1$ for the block sizes
+$(j,k)$ it uses --- verify it once in general:
+$(2^j - 1)2^k + 2^k - 1 = 2^{j+k} - 2^k + 2^k - 1 = 2^{j+k} - 1$ ✓ ---
+and every remaining line of the chain is an instance. Addition-chain
+verification in full: substitute, cancel, done.
+
+\solhead{10.3}
+\pathway Ask what \emph{differs between the two code paths}, not between
+the two mathematical functions. The math of \code{square a} and
+\code{mul a a} agree; the \emph{instructions} do not.
+\answer Three concrete misses. (1) \code{square} is a \emph{different
+routine}: it exploits symmetry ($a_i a_j$ appears twice for $i \neq j$,
+so it computes $2 a_i a_j$ once), which changes the column expressions,
+the constant factors, and therefore the \emph{bounds} --- the doubled
+terms eat one extra headroom bit that \code{mul}'s proof never had to
+account for. (2) A bug in that symmetry trick --- the classic one is a
+missing factor of $2$ on exactly one cross term --- lives \emph{only} in
+\code{square}'s code path; a theorem about \code{mul} quantifies over
+\code{mul}'s instructions and says nothing about it. (3) Even the
+\lean{.ok} clause differs: overflow behavior depends on the actual
+intermediate expressions, not on the mathematical value. The one-line
+summary for design reviews: \emph{we verify code paths, not functions ---
+if the optimizer wrote a second path, the verifier owes a second
+theorem}. (This is also exactly why the four forks each got their own
+proofs: same math, four instruction streams.)
 
 \begin{checkpoint}
 You should now be able to: state the field implementation certificate and

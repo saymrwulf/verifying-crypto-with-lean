@@ -48,29 +48,121 @@ Checking the certificate costs a handful of modular exponentiations
 prime factors $q$} --- each much smaller, so the recursion collapses fast.
 \end{bigidea}
 
-Concretely for our hero: $p - 1 = 2^{255} - 20 = 2^2 \cdot 5 \cdot q_1 \cdot
-q_2$ where $q_1$ (44 digits) and $q_2$ (33 digits) are themselves prime, with
-their own small certificates. The full certificate for $p$ is a small tree of
-witnesses and factorizations --- a few hundred bytes of data standing behind
-a 77-digit claim:
+Concretely for our hero: $p - 1 = 2^{255} - 20$ factors as
+\[
+p - 1 \;=\; 2^{2} \cdot 3 \cdot 65147 \cdot Q,
+\]
+where $Q$ is a 71-digit prime with its own (short) certificate, and
+$65147$ recurses one more level: $65146 = 2 \cdot 32573$ with $32573$
+prime. The full certificate for $p$ is a small tree of witnesses and
+factorizations --- a few hundred bytes of data standing behind a 77-digit
+claim:
 
 \begin{center}
 \begin{tikzpicture}[
   lvl/.style={draw=ink2,thick,rounded corners=2pt,fill=white,align=center,font=\small},
   edge/.style={-{Stealth},ink2,thick}
 ]
-  \node[lvl,fill=accentsoft] (p) at (0,2.6)
-    {$p = 2^{255}-19$ \quad witness $w=2$\\ $p-1 = 2^2\cdot 5\cdot q_1\cdot q_2$};
-  \node[lvl] (two)  at (-4.4,0.6) {$2$: prime\\ \footnotesize (immediate)};
-  \node[lvl] (five) at (-1.9,0.6) {$5$: prime\\ \footnotesize (immediate)};
-  \node[lvl,fill=provensoft] (q1) at (0.9,0.6) {$q_1$ (44 digits)\\ own witness + factors};
-  \node[lvl,fill=provensoft] (q2) at (4.3,0.6) {$q_2$ (33 digits)\\ own witness + factors};
-  \draw[edge] (p) -- (two); \draw[edge] (p) -- (five);
-  \draw[edge] (p) -- (q1);  \draw[edge] (p) -- (q2);
-  \node[font=\small\color{ink2},align=center] at (0,-0.6)
-    {each node: milliseconds to check; the whole tree: a proof};
+  \node[lvl,fill=accentsoft] (p) at (0,2.7)
+    {$p = 2^{255}-19$ \quad witness $w=2$\\ $p-1 = 2^2\cdot 3\cdot 65147\cdot Q$};
+  \node[lvl] (two)   at (-5.0,0.9) {$2$: prime\\ \footnotesize (immediate)};
+  \node[lvl] (three) at (-2.7,0.9) {$3$: prime\\ \footnotesize (immediate)};
+  \node[lvl,fill=provensoft] (m) at (0.4,0.9)
+    {$65147$ \quad witness $2$\\ \footnotesize $65146 = 2 \cdot 32573$};
+  \node[lvl,fill=provensoft] (q) at (4.4,0.9)
+    {$Q$ (71 digits)\\ own witness + factors};
+  \node[lvl] (sub) at (0.4,-0.7) {$32573$: prime\\ \footnotesize (small cert)};
+  \draw[edge] (p) -- (two); \draw[edge] (p) -- (three);
+  \draw[edge] (p) -- (m);   \draw[edge] (p) -- (q);
+  \draw[edge] (m) -- (sub);
+  \node[font=\small\color{ink2},align=center] at (4.4,-0.7)
+    {each node: milliseconds to check;\\ the whole tree: a proof};
 \end{tikzpicture}
 \end{center}
+
+(Check one leaf of this tree yourself right now, no computer:
+$4 \cdot 3 \cdot 65147 = 781764$, and $781764 \cdot Q$ must reproduce the
+77-digit $p-1$ --- the \emph{product identity} is the easiest condition of
+a certificate to audit, and auditing one leaf by hand is a good habit
+before trusting a tree. The witness conditions for $w = 2$ at the top node
+were re-verified computationally while writing this chapter; the
+kernel-checked version of this construction, for the Pallas modulus, lives
+in \code{pasta-pallas-verified}.)
+
+\begin{worked}{checking a Pratt certificate by hand --- all of it}
+Nothing builds trust in a certificate like verifying one completely, so
+here is the full check for $n = 97$, witness $w = 5$ --- every modular
+multiplication on this page, using the same square-and-multiply ladder
+the real code uses (and which you will implement in the exercises).
+First the data: $n - 1 = 96 = 2^5 \cdot 3$, so there are three
+conditions: $5^{96} \equiv 1$, $5^{96/2} = 5^{48} \not\equiv 1$, and
+$5^{96/3} = 5^{32} \not\equiv 1 \pmod{97}$.
+
+Build the powers of $5$ by repeated squaring mod $97$, reducing as you go
+--- each line is one two-digit multiplication and one division with
+remainder, nothing more:
+\[
+\begin{array}{lclcl}
+5^{2} &=& 25 \\
+5^{4} &=& 25^2 = 625 &=& 6\cdot 97 + 43 \;\to\; 43\\
+5^{8} &=& 43^2 = 1849 &=& 19\cdot 97 + 6 \;\to\; 6\\
+5^{16} &=& 6^2 &=& 36\\
+5^{32} &=& 36^2 = 1296 &=& 13\cdot 97 + 35 \;\to\; 35\\
+\end{array}
+\]
+Now assemble the three exponents from these squares:
+\[
+5^{48} = 5^{32} \cdot 5^{16} = 35 \cdot 36 = 1260 = 12 \cdot 97 + 96
+\;\to\; 96 \equiv -1 ,
+\]
+\[
+5^{96} = (5^{48})^2 \equiv (-1)^2 = 1 . \qquad ✓
+\]
+Check the conditions: $5^{96} \equiv 1$ ✓; $5^{48} \equiv 96 \neq 1$ ✓;
+$5^{32} \equiv 35 \neq 1$ ✓. All three hold --- and by Pratt's theorem
+(whose reason the exercises make you articulate), $97$ is prime, with the
+whole verification costing \emph{seven} small multiplications. Trial
+division would have cost eight test divisions here --- no savings at two
+digits. But the ladder's cost grows with the \emph{number of bits} (one
+squaring per bit), while trial division grows with the \emph{square root
+of the value} (one division per candidate) --- linear versus exponential
+in the bit-length. At 77 digits that gap is the whole story, as the next
+box counts.
+\end{worked}
+
+\begin{worked}{costing the real certificate for $p = 2^{255}-19$}
+How much work is the full certificate check for the real prime, versus
+trial division? Count it, honestly, using the tree above.
+
+\emph{Certificate side.} One modular exponentiation with a 255-bit
+exponent costs at most $254$ squarings plus at most $254$ multiplies ---
+call it $\le 508$ modular multiplications, and abbreviate ``modmul.''
+The top node needs: $2^{p-1}$ (one exponentiation), and one
+$2^{(p-1)/q}$ for each of the four prime factors $q \in \{2, 3, 65147,
+Q\}$ --- five exponentiations, $\le 2540$ modmuls. The recursion adds:
+$Q$'s own node ($Q-1$ has its own small factor list; generously, another
+five exponentiations at 71 digits, $\le 2350$ modmuls), the $65147$ node
+(16-bit numbers --- three exponentiations of $\le 32$ modmuls, noise),
+and $32573$'s (noise). Round the entire tree up to
+\[
+\text{certificate check} \;\lesssim\; 5{,}000 \text{ modmuls.}
+\]
+\emph{Trial division side.} $\sqrt{p} \approx 2^{127.5}$, and candidate
+divisors (odd numbers, say) number about $2^{126.5} \approx 10^{38}$.
+\emph{Ratio}:
+\[
+\frac{10^{38} \text{ divisions}}{5 \times 10^{3} \text{ modmuls}}
+\;\approx\; 10^{34}.
+\]
+Thirty-four orders of magnitude --- not an optimization, a different
+universe. And one more accounting worth doing: the certificate
+\emph{data} is four factor entries and a handful of witnesses --- a few
+hundred bytes. Someone (a computer algebra system, years of CPU time,
+once, offline) paid dearly to \emph{find} the factorization of $p-1$;
+every checker since pays five thousand multiplications. That asymmetry
+--- expensive find, cheap check, tiny certificate --- is the shape of
+every proof object the Lean kernel will ever hand you.
+\end{worked}
 
 \begin{aha}
 This find/check asymmetry is one of the great ideas of computer science ---
@@ -153,16 +245,93 @@ argument: if $w$ has order exactly $p-1$ in $\Zmod{p}$, then the
 multiplicative structure has $p-1$ elements, which fails if $p = ab$ with
 $1 < a,b < p$. (Full rigor optional; the shape is the point.)}
 
-\exercise{Estimate, in modular multiplications, the cost of checking the
-certificate for $2^{255}-19$: count squarings for one exponentiation at 255
-bits, times the number of conditions in the tree above. Compare with the
-$2^{127}$ divisions of trial division. Write both numbers down next to each
-other. Smile.}
+\exercise{(Paper) Certify $65147$ by hand-checkable data: given
+$65146 = 2 \cdot 32573$ and witness $w = 2$, list the exact conditions a
+checker must verify, then carry out the \emph{cheapest} one:
+$2^{65146/32573} = 2^2 = 4 \not\equiv 1 \pmod{65147}$. For the remaining
+two conditions, count precisely how many squarings and multiplications the
+ladder needs (do not perform them). How many two-to-five-digit
+multiplications, total, stand between a skeptic and certainty about
+$65147$?}
 
 \exercise{(Discussion) Bitcoin miners \emph{find} block hashes; nodes
 \emph{check} them. GPS receivers \emph{check} satellite signals they could
 never \emph{find}. Name two more systems built on the find/check asymmetry,
 and one system that would collapse without it.}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{7.1}
+\pathway The data first: $12 = 2^2 \cdot 3$, so two conditions beyond
+$w^{12} \equiv 1$: exponents $12/2 = 6$ and $12/3 = 4$. Then power up $2$
+mod $13$ by successive squaring, as the worked example did for $97$ ---
+at this size you can even go linearly.
+\answer Powers of $2$ mod $13$: $2^2 = 4$, $2^4 = 16 \equiv 3$,
+$2^6 = 2^4 \cdot 2^2 = 3 \cdot 4 = 12 \equiv -1$, and
+$2^{12} = (2^6)^2 \equiv (-1)^2 = 1$. Conditions: $2^{12} \equiv 1$ ✓;
+$2^{6} \equiv 12 \neq 1$ ✓; $2^{4} \equiv 3 \neq 1$ ✓. Witness confirmed.
+The full tree: node $13$ (witness $2$, $12 = 2^2 \cdot 3$) with children
+$2$ (immediate) and $3$ (witness $2$: $2^2 = 4 \equiv 1 \pmod 3$, and
+$2^{2/2} = 2 \not\equiv 1$ --- a two-line sub-certificate). Every claim in
+the tree is now something you have personally multiplied.
+
+\solhead{7.2}
+\pathway The key concept is the \emph{order} of $w$: the least $e > 0$
+with $w^e \equiv 1$. The two witness conditions pin the order exactly;
+then count invertible elements two ways.
+\answer The condition $w^{p-1} \equiv 1$ says the order of $w$ divides
+$p-1$; the conditions $w^{(p-1)/q} \not\equiv 1$ for every prime
+$q \mid p-1$ rule out every \emph{proper} divisor of $p-1$ (any proper
+divisor of $p-1$ divides some $(p-1)/q$). So the order is exactly $p-1$:
+the powers $w^1, w^2, \dots, w^{p-1}$ are $p-1$ \emph{distinct} elements,
+all invertible mod $p$ (each has $w^{\text{something}}$ as inverse). But
+if $p = ab$ with $1 < a, b < p$, the element $a$ is a zero divisor ---
+$a \cdot b \equiv 0$ --- so $a$ is not invertible, and neither are its
+multiples: strictly fewer than $p-1$ residues can be invertible.
+Contradiction; $p$ has no such factorization. (Full rigor pins down
+``distinct'' and the divisor-covering claim --- both one-liners with the
+order concept in hand. The shape is: \emph{one loud element forces the
+whole multiplicative structure to be as big as only a prime allows.})
+
+\solhead{7.3}
+\pathway List conditions mechanically from the definition, then count
+ladder steps: an exponent of $b$ bits costs $\le b-1$ squarings plus (at
+worst) $b-1$ multiplies; $65146 < 2^{16}$ and $32573 < 2^{15}$.
+\answer Conditions: (i) $2^{65146} \equiv 1 \pmod{65147}$;
+(ii) $2^{65146/2} = 2^{32573} \not\equiv 1$;
+(iii) $2^{65146/32573} = 2^{2} = 4 \not\equiv 1$ ✓ (done --- four is
+visibly not one); plus the recursive certificate for $32573$. Counting:
+$65146$ has $16$ bits ($2^{16} = 65536$), so condition (i) costs $\le 15$
+squarings $+ \le 15$ multiplies $= 30$; condition (ii), $15$ bits,
+$\le 28$; condition (iii) was free. Sub-certificate for $32573$
+($32572 = 2^2 \cdot 17 \cdot 479$): four conditions on $\le 15$-bit
+exponents, $\le 4 \cdot 28 = 112$, plus leaves ($17$, $479$ ---
+another $\sim 60$ generously). Total: \emph{under $250$ small
+multiplications} --- an afternoon with paper, an eyeblink for a kernel,
+and at the end $65147$ is not ``probably prime'' but \emph{prime}. (For
+the audit-minded: you were given $32572$'s factorization here the same
+way the checker is --- as certificate data. Verifying
+$4 \cdot 17 \cdot 479 = 32572$ is one more hand multiplication:
+$68 \cdot 479 = 32572$ ✓.)
+
+\solhead{7.4}
+\pathway Look for systems where producing an artifact is costly but a
+short receipt convinces everyone --- then for the collapse case, imagine
+checking costing as much as finding.
+\answer (Model answers.) Two more: \emph{academic peer review of
+computer-assisted proofs} --- the four-color theorem's checkers verify in
+hours what took years to construct; and \emph{password hashing} ---
+deriving a hash from a password is instant to check against, infeasible
+to invert. Others students propose: sudoku (solve vs.\ check), lottery
+tickets (draw vs.\ verify), digital signatures themselves (sign with
+secret effort-equivalent, verify publicly). A system that would collapse
+without the asymmetry: \emph{blockchain consensus} --- if verifying a
+block cost as much as mining it, every node would need a mine's
+electricity bill and the network could not exist. (So would mathematics
+as a social enterprise: if checking a proof cost as much as finding it,
+referees would be as rare as authors. In a sense, Lean is what happens
+when you drive the check cost toward zero and let anyone be a referee.)
 
 \begin{checkpoint}
 You should now be able to: explain why \lean{decide} cannot prove

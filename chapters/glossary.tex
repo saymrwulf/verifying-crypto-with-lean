@@ -1,0 +1,157 @@
+\chapter*{Glossary}
+\markboth{Glossary}{}
+\addcontentsline{toc}{chapter}{Glossary}
+
+\newcommand{\gloss}[1]{\par\smallskip\noindent{\bfseries #1.}\ }
+
+\gloss{Axiom-clean} Of a theorem: \lean{\#print axioms} reports exactly
+Lean's standard trio \lean{[propext, Classical.choice, Quot.sound]} and
+nothing else. The gold standard for shipped certificates
+(Chapter~\ref{ch:honesty}).
+
+\gloss{Bounds invariant} A predicate limiting how large limbs may grow
+(e.g.\ every limb $< 2^{54}$), maintained across operations so that
+machine arithmetic never overflows. One of the two clauses of every
+operation spec (Chapters~\ref{ch:rust}--\ref{ch:denotation}).
+
+\gloss{Carry} Value moved from one limb position to the next when a
+limb exceeds its radix. Delayed (``lazy'') carries are the central
+performance trick of fast field arithmetic and the habitat of its
+characteristic bugs (Chapter~\ref{ch:why}; Interlude).
+
+\gloss{Certificate} Data that makes a fact cheap to \emph{check}
+regardless of how expensive it was to \emph{find}: a Pratt witness
+tree for primality, a proof object for a theorem
+(Chapter~\ref{ch:prime}).
+
+\gloss{Charon / Aeneas} The two-stage extraction pipeline: Charon
+compiles Rust to the LLBC intermediate representation; Aeneas
+translates LLBC into pure Lean definitions
+(Chapter~\ref{ch:rust}).
+
+\gloss{Cofactor} The factor $8$ in the Ed25519 group order $8\ell$;
+multiplying by it annihilates the small-torsion component of any point,
+which is why the verification equation reads $8sB = 8R + 8kA$
+(Chapter~\ref{ch:pyramid}).
+
+\gloss{Commuting square} The diagram --- machine operation along the
+top, ideal operation along the bottom, denotation down the sides ---
+whose closure \emph{is} implementation correctness
+(Chapter~\ref{ch:denotation}).
+
+\gloss{Complete (addition law)} An addition formula with no exceptional
+cases: valid for every pair of points, including doubling and identity.
+Ed25519's Edwards law is complete because $d$ is a non-square
+(Chapter~\ref{ch:pyramid}).
+
+\gloss{Decision procedure} An algorithm that settles \emph{every}
+statement in a defined logical fragment --- \lean{omega} for linear
+arithmetic, \lean{decide} for finite computations, \lean{ring} for
+ring identities. Failure on an in-fragment goal means the goal is
+false (Chapter~\ref{ch:automation}).
+
+\gloss{Definitional equality} Two terms being identical after the
+kernel computes (unfolds definitions, reduces recursion). What
+\lean{rfl} checks; blocked by opaque variables in recursion position
+(Chapter~\ref{ch:pat}).
+
+\gloss{Denotation} The function $\denote{\cdot}$ mapping a machine
+representation (limb array) to the mathematical value it \emph{means}
+(an element of $\Fp$). The bridge on which all correctness statements
+stand (Chapter~\ref{ch:denotation}).
+
+\gloss{Euler's criterion} $a^{(p-1)/2} \equiv \pm 1 \pmod p$ decides
+whether $a$ is a square modulo the odd prime $p$ ($+1$: square; $-1$:
+non-square). Settles both completeness facts of
+Chapter~\ref{ch:pyramid} (toolkit Card~7).
+
+\gloss{Extraction} Mechanical translation of source code (Rust) into a
+proof assistant's language via Charon/Aeneas, producing the \emph{model}
+--- the artifact actually verified, never hand-edited
+(Chapter~\ref{ch:rust}).
+
+\gloss{Fermat's little theorem} $a^{p-1} \equiv 1 \pmod p$ for prime
+$p$ and $a \not\equiv 0$; hence $a^{p-2} = a^{-1}$, the identity behind
+the verified inversion chain (Chapters~\ref{ch:modular},
+\ref{ch:field}).
+
+\gloss{Find/check asymmetry} The gap between the cost of discovering a
+fact and the cost of verifying a certificate for it --- the engine of
+Pratt certificates, proof kernels, and (in disguise) the P-vs-NP
+question (Chapter~\ref{ch:prime}).
+
+\gloss{Hasse bound} An elliptic curve over $\Fp$ has $p + 1 - t$ points
+with $|t| \le 2\sqrt{p}$; the thirty-second sanity check for any
+claimed group order (Chapter~\ref{ch:pyramid}).
+
+\gloss{Fold} Reducing an overflow of the representation (weight
+$2^{255}$ and above) back into range using the modulus identity
+$2^{255} \equiv 19$; costs exactly one multiple of $p$ per unit folded
+(Chapter~\ref{ch:denotation}; Interlude).
+
+\gloss{Goal state} The proof assistant's board: hypotheses above the
+turnstile $\vdash$, obligation below. Reading it is the core tactic
+skill (Chapter~\ref{ch:tactics}).
+
+\gloss{Headroom} Bits of slack between a limb's payload (e.g.\ 51 bits)
+and its machine word (64 bits); the budget lazy carries spend
+(Chapter~\ref{ch:why}).
+
+\gloss{Inductive type} A type defined by listing its constructors
+exhaustively (\lean{Nat}: \lean{zero} and \lean{succ}). Grants both
+pattern matching and the induction principle (Chapters~\ref{ch:lean},
+\ref{ch:tactics}).
+
+\gloss{Kernel} The small, paranoid core of a proof assistant that
+re-checks every proof object against a fixed rule set; the only
+component whose correctness soundness depends on
+(Chapter~\ref{ch:why}).
+
+\gloss{Limb} One machine word of a multi-word big-number
+representation; Ed25519 field elements use five 51-bit limbs in 64-bit
+words (Chapters~\ref{ch:why}, \ref{ch:denotation}).
+
+\gloss{Model} The extracted Lean rendition of the source code, living
+in \code{gen/}; the object theorems quantify over
+(Chapter~\ref{ch:rust}).
+
+\gloss{Montgomery form} Representing $x$ as $x \cdot R \bmod p$
+(typically $R = 2^{256}$) to make post-multiplication reduction cheap;
+absorbed by adjusting the denotation (Chapter~\ref{ch:denotation}).
+
+\gloss{Pratt witness} An element $w$ with $w^{p-1} \equiv 1$ and
+$w^{(p-1)/q} \not\equiv 1$ for every prime $q \mid p-1$; its existence
+certifies $p$ prime, given certificates for the $q$'s
+(Chapter~\ref{ch:prime}).
+
+\gloss{Radix} The base of a limb representation ($2^{51}$ for the
+dalek field, $4$ for this book's toy system).
+
+\gloss{Specification (spec)} The precise statement a program is proven
+to satisfy. The two-clause shape for arithmetic: bounds propagation
+plus value equation. A proof is only as good as its spec
+(Chapters~\ref{ch:denotation}, \ref{ch:honesty}).
+
+\gloss{Substitution test} Auditing a spec by substituting an
+adversarial implementation and checking whether the statement notices;
+detects trivial specs no tool can flag (Chapter~\ref{ch:honesty}).
+
+\gloss{Tactic} A command in Lean's interactive proof mode that
+transforms the goal state (\lean{intro}, \lean{rw}, \lean{induction},
+\lean{omega}, \dots), assembling a proof object behind the scenes
+(Chapter~\ref{ch:tactics}).
+
+\gloss{Torsion} The small-order component of a curve point (order
+dividing the cofactor); killed by multiplying by $8$, hence invisible
+to cofactored verification (Chapter~\ref{ch:pyramid}).
+
+\gloss{Trusted base} Everything a verification result assumes rather
+than proves: the kernel, the extraction tool, declared axioms
+(SHA-512, untranslatable backends). Honest projects keep it small,
+documented, and machine-visible (Chapters~\ref{ch:rust},
+\ref{ch:honesty}).
+
+\gloss{Two-clause spec} This book's name for the standard operation
+theorem: \emph{(1)} the operation succeeds and its output satisfies the
+(possibly widened) bounds invariant; \emph{(2)} the output's denotation
+equals the ideal result (Chapter~\ref{ch:denotation}; Interlude).

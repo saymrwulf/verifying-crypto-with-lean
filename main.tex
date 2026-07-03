@@ -73,6 +73,68 @@ strict compiler for it. Once you see proofs as programs, the fear evaporates and
 the fun begins.
 \end{aha}
 
+\subsection*{Working the pen-and-paper material}
+
+The notebook-ruled \emph{Pen and paper} boxes are not optional
+enrichment; they are half the course. Each one performs a computation
+with the \emph{real} constants of the systems under study ---
+$2^{255}-19$, radix $2^{51}$, the fold constant $19$, the actual
+inversion chain --- because the numbers themselves carry the arguments:
+a headroom margin of $17$ bits, a design constant that fails at $8$ and
+works at $16$, a certificate that beats trial division by a factor of
+$10^{34}$. Copy each one out by hand at least once --- transcription is
+where the steps become yours. Every chapter's exercises are followed
+immediately by \emph{Solutions and pathways}: the pathway (how a person
+finds the answer) before the answer, because the pathway is the
+transferable part. The honest protocol: attempt, struggle a little,
+then read --- in that order.
+
+\subsection*{For instructors}
+
+The book is engineered for self-study, which makes it easy to teach
+from: every exercise carries an immediate pathway-then-answer solution,
+so contact hours can go to the parts that need a human --- discussing
+the discussion exercises (each chapter has one; they are the seminar
+seeds), pair-debugging the Lean files, and auditing real repositories
+together (Appendix~\ref{app:tour} is a ready-made lab session). Grading
+suggestion: collect the pen-and-paper worked examples \emph{reproduced
+from memory} rather than problem sets --- the book's bet is that a
+student who can re-derive the $16p$ audit or the certificate cost
+ledger unprompted has the durable skill, and that bet is testable. The
+Lean solution files compile against the pinned toolchain in the repo;
+\code{lake build Solutions} is your answer key's answer key. Prerequisites
+in practice: one programming course (any language) and comfort with
+high-school algebra; no number theory, no logic, no Rust. The
+thirteen-week plan below has been paced so the two hard climbs ---
+Chapter~9 and the Interlude --- each get a full week with nothing else
+competing.
+
+\subsection*{A thirteen-week plan}
+
+For self-study or a seminar, the book paces naturally as a semester:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Weeks} & \textbf{Material} & \textbf{Deliverable} \\
+\midrule
+1     & Ch.~1 + toolkit Cards 1--2       & the two Ch.~1 audits, by hand \\
+2--3  & Ch.~2--3 + \code{Ch02/Ch03.lean} & term-mode proof portfolio \\
+4     & Ch.~4 + \code{Ch04.lean}         & the \code{zero\_add} board trace, from memory \\
+5     & Ch.~5 + \code{Ch05.lean}         & ten goals, right tool each \\
+6     & Ch.~6 + \code{Ch06.lean}         & the Euclid inversion, reproduced \\
+7     & Ch.~7 + \code{Ch07.lean}         & hand-checked certificate for 97 \\
+8     & Ch.~8 + repo reading (App.~C)    & annotated extract of \code{gen/} \\
+9     & Ch.~9 + \code{Ch09.lean}         & the miniature bridge, proved \\
+10    & Interlude                        & the complete by-hand verification \\
+11    & Ch.~10--11                       & audit drill on a stranger's repo \\
+12    & Ch.~12 + \code{Ch12.lean}        & graduation: spec--refusal--fix--certificate \\
+13    & project                          & one open lemma or one solo bridge \\
+\bottomrule
+\end{tabular}
+\end{center}
+
 \tableofcontents
 
 % ===================== CHAPTERS =====================
@@ -85,8 +147,15 @@ the fun begins.
 \input{chapters/ch07-primality-certificates}
 \input{chapters/ch08-rust-to-lean}
 \input{chapters/ch09-denotation-bridge}
+\input{chapters/interlude-by-hand}
 \input{chapters/ch10-verifying-a-field}
 \input{chapters/ch11-honesty-and-axioms}
 \input{chapters/ch12-the-pyramid}
+
+\appendix
+\input{chapters/appendix-toolkit}
+\input{chapters/appendix-walkthroughs}
+\input{chapters/appendix-repo-tour}
+\input{chapters/glossary}
 
 \end{document}

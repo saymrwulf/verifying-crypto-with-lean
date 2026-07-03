@@ -83,6 +83,54 @@ inverses as $a^{p-2}$ with a hand-crafted chain of $254$ squarings and $11$
 multiplications; one of the proofs you will meet in Chapter~\ref{ch:field}
 verifies precisely that this chain computes what Fermat promises.
 
+\begin{worked}{inverting $19$ modulo the 77-digit prime, entirely by hand}
+A 77-digit modulus does not put pen-and-paper out of business --- watch.
+We compute $19^{-1} \bmod p$ for the real $p = 2^{255}-19$, exactly, in
+five lines of Euclid. The only preparation is one residue:
+\emph{what is $p$ mod $19$?} By Fermat's little theorem in the
+\emph{small} field $\Zmod{19}$: $2^{18} \equiv 1$, and
+$255 = 14 \cdot 18 + 3$, so
+\[
+2^{255} \equiv (2^{18})^{14} \cdot 2^3 \equiv 8 \pmod{19}
+\qquad\Longrightarrow\qquad
+p = 2^{255} - 19 \equiv 8 - 0 \equiv 8 \pmod{19}.
+\]
+So $p = 19k + 8$ for the (77-digit, but never-written-out) integer
+$k = (p-8)/19$. Now run Euclid on $(p, 19)$, keeping remainders only:
+\[
+p = 19k + 8, \qquad 19 = 2\cdot 8 + 3, \qquad 8 = 2\cdot 3 + 2,
+\qquad 3 = 1\cdot 2 + 1 .
+\]
+The gcd is $1$ (of course --- $p$ is prime). Back-substitute, bottom to
+top, expressing $1$ in terms of each earlier pair:
+\[
+\begin{array}{lcl}
+1 &=& 3 - 2\\
+  &=& 3 - (8 - 2\cdot 3) \;=\; 3\cdot 3 - 8\\
+  &=& 3\,(19 - 2\cdot 8) - 8 \;=\; 3\cdot 19 - 7\cdot 8\\
+  &=& 3\cdot 19 - 7\,(p - 19k) \;=\; (3 + 7k)\cdot 19 \;-\; 7p .
+\end{array}
+\]
+Read off the answer: $19 \cdot (3 + 7k) = 1 + 7p \equiv 1 \pmod p$, so
+\[
+19^{-1} \bmod p \;=\; 3 + 7k
+\;=\; 3 + 7\cdot\frac{p - 8}{19} .
+\]
+This is an \emph{exact, closed-form} answer about the real prime, computed
+with numbers that never exceeded two digits --- the size of $p$ entered
+only through one residue. Two lessons. First, modular arithmetic is
+constantly this kind: gigantic numbers handled through small
+representatives --- the same move the limb representation of
+Chapter~\ref{ch:denotation} industrializes. Second, note what the
+computation \emph{cost}: five divisions. Fermat's route costs $254$
+squarings of 77-digit numbers. Why does the real code use Fermat anyway?
+Because Euclid's division sequence \emph{depends on the input value} ---
+its running time leaks secrets through timing --- while the Fermat chain
+executes identically for every input. Constant-time discipline pays a
+couple hundred multiplications of overhead for silence; you will meet
+this trade at every layer of the pyramid.
+\end{worked}
+
 \section{\texorpdfstring{Why $2^{255}-19$?}{Why 2**255-19?} A prime chosen for machines}
 
 Any large prime makes a field. Why this one? Because arithmetic mod $p$ is
@@ -104,12 +152,79 @@ for them:
   point's sign. Engineering all the way down.
 \end{itemize}
 
+\begin{worked}{the multiply-by-19 reduction, performed on real overflow}
+Do the reduction the code does, by hand, on the real modulus. The
+identity: $2^{255} = p + 19 \equiv 19 \pmod p$. Now take a genuinely
+overflowing value --- say $2^{260}$, five bits past the edge, the kind of
+thing a lazy carry chain produces. Split off the overflow and fold:
+\[
+2^{260} \;=\; 2^{5} \cdot 2^{255}
+\;\equiv\; 2^{5} \cdot 19
+\;=\; 608 \pmod{p}.
+\]
+One multiplication by a two-digit constant replaced a division by a
+77-digit prime. Once more, with a mixed value: reduce
+$x = 2^{256} + 2^{255} + 7$:
+\[
+x = (2 + 1)\cdot 2^{255} + 7 \;\equiv\; 3 \cdot 19 + 7 \;=\; 64 \pmod p .
+\]
+And the general recipe, exactly as the code implements it: write
+$x = x_{\mathrm{lo}} + 2^{255} x_{\mathrm{hi}}$ (a bit-split, free in
+hardware); return $x_{\mathrm{lo}} + 19\, x_{\mathrm{hi}}$. Estimate the
+shrinkage like an engineer: if $x < 2^{300}$, then
+$x_{\mathrm{hi}} < 2^{45}$ and the result is
+$< 2^{255} + 19\cdot 2^{45} < 2^{256}$ --- one pass tames $45$ excess bits,
+and a second pass lands below $2^{256}$-ish for good. This
+split-multiply-add \emph{is} the entire reduction machinery of every
+curve25519 implementation on earth; you have now executed it. When
+Chapter~\ref{ch:field} verifies \code{reduce}, the theorem is the
+congruence line above, quantified over every $x$ the bounds admit.
+\end{worked}
+
 The Pasta curves verified in the companion projects (Pallas/Vesta, used in
 zero-knowledge proof systems) choose their $\approx 2^{254}$ primes by a
 different criterion --- friendliness to fast Fourier transforms --- and
 represent elements in \emph{Montgomery form}, a representation trick we will
 touch in Chapter~\ref{ch:denotation}. Different shapes, same theory: pick a
 prime whose field your machine can love.
+
+\begin{worked}{shadow arithmetic --- auditing big computations on small clocks}
+Your grandmother's bookkeeper knew a modular-arithmetic trick worth
+resurrecting: \emph{casting out nines}. Because $10 \equiv 1 \pmod 9$,
+a number is congruent mod $9$ to its digit sum --- so any claimed sum or
+product of large numbers can be spot-checked by comparing digit-sum
+shadows. The general principle: \textbf{any exact integer identity
+survives reduction mod anything}, so a cheap clock can audit an
+expensive computation. Watch it catch the classic transcription error
+--- two leading digits transposed:
+\[
+123456789 \times 987654321 \;\overset{?}{=}\;
+\underline{21}1932631112635269 .
+\]
+Shadow mod $9$: digit-sum$(123456789) = 45 \equiv 0$, so the product's
+shadow must be $0 \cdot (\text{anything}) = 0$; the claimed result's
+digit sum is $63 \equiv 0$ --- \emph{passes}. It would: transpositions
+never change a digit sum, which is exactly why bookkeepers paired nines
+with a second clock. Mod $11$ ($10 \equiv -1$, so take the
+\emph{alternating} digit sum from the right): each factor
+$\equiv 5 \pmod{11}$, so the product must be
+$5 \cdot 5 = 25 \equiv 3 \pmod{11}$; the claimed result's alternating
+sum gives $1 \not\equiv 3$ --- \textbf{caught}. (The true product is
+$121932631112635269$; the transposition slipped past one clock and not
+the other, which is the design lesson: independent shadows multiply
+their power, $1$-in-$9$ and $1$-in-$11$ escape odds compounding to
+$1$-in-$99$.)
+
+Why this card lives in this book: the verified field code is audited by
+the \emph{same architecture}. The denotation bridge of
+Chapter~\ref{ch:denotation} checks limb computations by their shadow in
+$\Zmod{p}$ --- one gigantic well-chosen clock instead of two small ones
+--- and the kernel plays the incorruptible bookkeeper. And when
+\emph{you} debug a failing proof about a $77$-digit computation,
+shadowing both sides mod $9$ or mod $97$ by hand remains the fastest
+way to find out \emph{which} side is lying. (Exercise 6.6 hands you a
+broken carry chain to convict this way.)
+\end{worked}
 
 \section{Modular arithmetic in Lean, hands on}
 
@@ -173,6 +288,118 @@ $x_{\mathrm{low}} + 19\, x_{\mathrm{high}}$. Prove informally that this
 preserves the value mod $p$, and bound how much smaller the result is. You
 have just re-derived the reduction step you will verify formally in
 Chapter~\ref{ch:field}.}
+
+\exercise{(Paper) Run the worked Euclid computation for a different small
+constant: find $121665^{-1} \bmod p$? No --- that one needs more lines
+than a margin holds. Do the honest scaled version: compute
+$p \bmod 3$ (via $2^{255} \bmod 3$) and derive $3^{-1} \bmod p$ in closed
+form, as the worked example did for $19$. Check your first Euclid line by
+verifying the claimed residue.}
+
+\exercise{(Shadow audit) A limb computation claims
+$(2^{51} - 19) + (2^{51} - 1) = 2^{52} - 21$. Convict or acquit using
+two shadows: mod $9$ and mod $5$. (Powers of $2$ cycle mod $9$ with
+period $6$ and mod $5$ with period $4$ --- Card~3 of the toolkit
+generalizes.)}
+
+\section*{Solutions and pathways}
+\solutionsintro
+
+\solhead{6.1}
+\pathway ``Inverse of $3$ mod $7$'' asks: three times what is one more
+than a multiple of $7$? With seven candidates, enumerate --- and while
+enumerating, watch the stepping-around-the-clock picture from the chapter
+figure happen.
+\answer $3 \cdot 5 = 15 = 2\cdot 7 + 1$, so $3^{-1} = 5$ in $\Zmod{7}$.
+Stepping by $3$ from $0$: $0 \to 3 \to 6 \to 2 \to 5 \to 1 \to 4 \to 0$
+--- all seven positions visited before returning, because
+$\gcd(3,7)=1$. \lean{\#eval (3⁻¹ : ZMod 7)} confirms \lean{5}. (If you
+try the same walk stepping by $4$ on the 12-clock, you revisit $0$ after
+three steps --- the figure's left panel --- and that early return
+\emph{is} the nonexistence of the inverse.)
+
+\solhead{6.2}
+\pathway Twelve cases is \lean{decide} territory; the interest is in the
+refusal after you change the modulus. A decision procedure failing on a
+false statement is \emph{pointing} at something --- make it tell you what.
+\answer \lean{example : ∀ x : ZMod 12, 4 * x ≠ 1 := by decide} succeeds.
+With modulus $13$: \lean{decide} fails, because the statement is now
+false --- $\gcd(4,13) = 1$, so an inverse exists. Find it as the worked
+examples teach: $4 \cdot 10 = 40 = 3 \cdot 13 + 1$, so the witness is
+$x = 10$, confirmed by \lean{\#eval (4⁻¹ : ZMod 13)} printing \lean{10}.
+The general moral, third time now: a decision procedure's ``no'' is a
+counterexample's ``here.''
+
+\solhead{6.3}
+\pathway Fermat gives $a^{10} = 1$ directly ($p - 1 = 10$ at $p = 11$);
+the exercise's $a^9 \cdot a$ is that same fact wearing a disguise ---
+undo the disguise with exponent algebra ($a^9 \cdot a = a^{10}$), then
+apply the library lemma. Registering \lean{Fact (Nat.Prime 11)} is the
+price of admission for the typeclass machinery.
+\answer
+\begin{lstlisting}[language=Lean]
+instance : Fact (Nat.Prime 11) := ⟨by decide⟩
+
+example (a : ZMod 11) (h : a ≠ 0) : a^9 * a = 1 := by
+  have hp := ZMod.pow_card_sub_one_eq_one h   -- a^10 = 1
+  calc a^9 * a = a^10 := by ring
+       _       = 1    := by simpa using hp
+\end{lstlisting}
+The two-step shape --- \emph{algebraic massage by \lean{ring}, then the
+library fact} --- is how nearly every ``mathematical'' step in the real
+proofs goes. The inversion-chain verification of
+Chapter~\ref{ch:field} is this exercise, iterated 265 times.
+
+\solhead{6.4}
+\pathway Congruence first (replace $2^{255}$ by $19$ and check the
+difference is a multiple of $p$), size second (bound each summand).
+\answer \emph{Congruence:} the returned value differs from $x$ by
+$x_{\mathrm{high}} \cdot (2^{255} - 19) = x_{\mathrm{high}} \cdot p$, a
+multiple of $p$ --- so they are congruent. (That is the whole proof; write
+it as one displayed equation and admire how little was needed.)
+\emph{Size:} for $x < 2^{256}$ we have $x_{\mathrm{high}} < 2$, i.e.\
+$x_{\mathrm{high}} \in \{0, 1\}$, and $x_{\mathrm{low}} < 2^{255}$, so the
+result is $< 2^{255} + 19 < 2^{256}$ --- and if $x_{\mathrm{high}} = 1$
+the value dropped by $p - 19 \approx 2^{255}$: one pass halves the range.
+The formal statement in \code{dalek-ed25519-verified} carries exactly
+these two clauses --- congruence and bound --- the two-clause spec shape
+of Chapter~\ref{ch:denotation}, met here in miniature.
+
+\solhead{6.5}
+\pathway Same three moves as the worked example: (i) small-field Fermat
+for the residue, (ii) Euclid (here trivially short), (iii)
+back-substitute into closed form.
+\answer Residue: $2 \equiv -1 \pmod 3$, so
+$2^{255} \equiv (-1)^{255} = -1 \equiv 2 \pmod 3$, hence
+$p = 2^{255} - 19 \equiv 2 - 1 \equiv 1 \pmod 3$ (since
+$19 \equiv 1 \bmod 3$). So $p = 3m + 1$ with $m = (p-1)/3$. Then
+$3m = p - 1 \equiv -1$, i.e.\ $3 \cdot (-m) \equiv 1$, giving
+\[
+3^{-1} \bmod p \;=\; p - m \;=\; p - \frac{p-1}{3} \;=\; \frac{2p + 1}{3}.
+\]
+Sanity-check the closed form: $3 \cdot \frac{2p+1}{3} = 2p + 1 \equiv 1
+\pmod p$ ✓. Notice the answer is one line shorter than the worked
+example's --- because $p \bmod 3 = 1$ made Euclid collapse. The residue
+does all the work; the size of $p$ never mattered.
+
+\solhead{6.6}
+\pathway Shadow each side independently; a mismatch on \emph{any} clock
+convicts. Powers of $2$ cycle: mod $9$ with period $6$
+($2^6 = 64 \equiv 1$), mod $5$ with period $4$ ($2^4 \equiv 1$) ---
+reduce exponents by the period, exactly Card~3's move.
+\answer Mod $9$: $51 \equiv 3 \pmod 6$ so $2^{51} \equiv 2^3 = 8$, and
+$19 \equiv 1$, so the left side is
+$\equiv (8 - 1) + (8 - 1) = 14 \equiv 5$.
+Claimed right side: $52 \equiv 4 \pmod 6$ so $2^{52} \equiv 2^4 = 7$,
+and $21 \equiv 3$, giving $7 - 3 = 4$. Shadow verdict: $5 \neq 4$ ---
+\textbf{convicted}. Cross-examine mod $5$: $2^{51} \equiv 2^{3} = 3$
+(period $4$), left $\equiv (3 - 4) + (3 - 1) = -1 + 2 = 1$; right:
+$2^{52} \equiv 1$, $21 \equiv 1$, gives $0$. Again $1 \neq 0$ ---
+convicted twice. The true sum is $2^{52} - 20$ (check its shadows:
+mod $9$: $7 - 2 = 5$ ✓; mod $5$: $1 - 0 = 1$ ✓); the claim was off by
+exactly one --- the species of error this book has been hunting since
+Chapter~\ref{ch:why}, caught this time with two clocks and thirty
+seconds.
 
 \begin{checkpoint}
 You should now be able to: compute in $\Zmod{n}$ and explain the notation;

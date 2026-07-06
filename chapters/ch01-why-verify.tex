@@ -187,6 +187,20 @@ proofs at every layer of this pyramid. The journey looks like this:
   ethics of axioms and honest boundaries, and the layers above.
 \end{itemize}
 
+\begin{bigidea}
+\textbf{The ratchet rule of this book.} Every load-bearing idea is worked
+at least twice: once at \emph{napkin scale} (a modulus like $13$, numbers
+you can invert by scanning), and once at \emph{real scale} --- the actual
+77-digit constants of Ed25519, printed in full, with no digits hidden and
+no artificial zeros. The napkin run teaches the moves; the real-size run
+proves the moves are the whole story, because they are \emph{identical} ---
+only the digits get longer, and wherever raw size genuinely exceeds paper
+(a 77-digit square root, say) the book says so explicitly and shows you
+how to audit the machine's work instead (witnesses, small clocks,
+certificates). If a step ever feels like a leap, back up one worked
+example: the missing rung is there, at the smaller size.
+\end{bigidea}
+
 \section{Proofs versus tests: the honest comparison}
 
 Formal verification is not magic, and this book will never pretend otherwise.

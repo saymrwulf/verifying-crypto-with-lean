@@ -108,6 +108,18 @@ In the spirit of Chapter 11:
   section, and audit-drill solution, chapter 11's boundary example,
   chapter 8's extraction notes, the repo tour, and this table were
   brought up to the proven state.
+- Didactic revision (2026-07-06, same day): the book now states and keeps
+  a "ratchet rule" (chapter 1) — every load-bearing idea worked at napkin
+  scale AND at real scale with the full 77-digit constants printed,
+  nothing elided. Chapter 12 gained the missing rungs: the addition law
+  run by hand on a mod-13 curve and then on the real base point (with a
+  machine-supplied quotient witness audited by casting out nines and
+  elevens), the scalar cycle felt on the napkin curve, decompression run
+  twice (mod-13 sign-bit walk, then the real compressed base point:
+  byte-31 sign bit, and the full-size hand verification 5·y_B − 4 = 4·p,
+  every digit printed), plus a new paper exercise (12.4). Every printed
+  constant was machine-verified before typesetting; the PDF (109 pages)
+  is rebuilt from these sources.
 - The PDF in the repo is built from the committed sources by the command
   above; rebuild it yourself if you don't trust binaries (good instinct).
 - The three named solution certificates were kernel-audited

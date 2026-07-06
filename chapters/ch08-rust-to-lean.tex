@@ -178,13 +178,15 @@ companion projects:
 \begin{itemize}[leftmargin=1.4em]
 \item \textbf{Extract functions, not crates.} Charon accepts specific roots
   (individual functions and impls); the extraction scripts in each companion
-  repo (\code{extract.sh}, \code{extract-scalar.sh}) name exactly the
-  arithmetic functions and get a small, clean model --- 28 definitions
-  instead of a thousand.
-\item \textbf{Some code will not translate.} The dalek scalar-multiplication
-  backends use CPU-specific SIMD intrinsics no translator models. The
-  boundary is then \emph{documented}: those functions enter the trusted base,
-  stated as assumptions, visible in every audit. Honest boundaries beat
+  repo (\code{extract.sh}) name exactly the needed roots and get one
+  small, clean, merged model per repo --- dozens of definitions instead
+  of a thousand.
+\item \textbf{Some code will not translate.} The dalek SIMD backends use
+  CPU-specific intrinsics no translator models. The boundary is then
+  \emph{engineered} rather than assumed: extraction pins the serial
+  backend --- real, translatable code the campaign proved like everything
+  else --- and the SIMD alternatives are scoped out of the verified
+  claim, the scoping documented in the ledger. Honest boundaries beat
   heroic fictions (Chapter~\ref{ch:honesty} dwells on this).
 \item \textbf{Pin your tools.} The pipeline records exact versions of
   Charon, Aeneas, and Lean. A model regenerated with a different translator

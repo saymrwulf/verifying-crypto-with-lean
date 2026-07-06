@@ -20,9 +20,9 @@ where Montgomery form demands it.
 the honest-boundary statements of Chapter~\ref{ch:honesty} \\
 \code{TRUSTED-BASE.md} & the ledger: every assumption, each with its
 reason --- read this \emph{before} being impressed by anything \\
-\code{verification/extract.sh} & extraction roots for the field layer
-(Charon $\to$ LLBC $\to$ Aeneas); \code{extract-scalar.sh} likewise for
-scalars \\
+\code{verification/extract.sh} & the extraction recipe (Charon $\to$
+LLBC $\to$ Aeneas): ONE merged universe per repo --- field, curve,
+scalar, and the verify path --- plus the signature glue \\
 \code{verification/gen/} & the extracted model. \textbf{Never
 hand-edited} (Chapter~\ref{ch:rust}); regenerated or left alone \\
 \code{verification/Proofs/} & the human-written theorems ---
@@ -58,10 +58,11 @@ you audited in Chapter~\ref{ch:field}'s worked example.
 (\code{fieldImplementation}) and its \lean{\#print axioms} line. This
 is the artifact all the marketing language ultimately refers to; note
 how unglamorous it looks.
-\item \textbf{The frontier} --- the scalar layer's in-progress files,
-clearly marked. Read one open lemma statement and recognize its shape
-(it is 9.B with bigger constants). This is where
-Chapter~\ref{ch:pyramid}'s invitation points.
+\item \textbf{The apex} --- \code{verify\_accepts\_iff\_decompress}
+in \code{Proofs/DecompressMain.lean}, the top of the four-tier stack,
+and the check script's boundary phase that guards its axiom cone. Note
+how short the capstone proof is: every hard fact was certified below it.
+This is where Chapter~\ref{ch:pyramid}'s invitation points.
 \end{enumerate}
 
 \section{Running the machinery}
@@ -91,7 +92,9 @@ mechanical half of the Chapter~\ref{ch:honesty} field guide, automated.
 unlike source text, cannot be hidden in comments. \emph{Phase 3 is the
 one-command audit}, run on every certificate, every time, so the
 axiom-clean property is continuously enforced rather than occasionally
-asserted.
+asserted. A fourth phase arrived with the signature layer: \emph{3b pins
+the apex tiers' cones to the documented hash/wire-format boundary
+EXACTLY} --- an unexpected addition \emph{or removal} fails the build.
 
 \section{The control repository}
 

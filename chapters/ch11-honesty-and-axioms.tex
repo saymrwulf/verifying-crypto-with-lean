@@ -190,8 +190,13 @@ axiom sha512_spec : ∀ msg, Sha512.hash msg = SHA512_ideal msg
 \end{lstlisting}
 
 A signature-layer certificate honestly reads: \emph{EdDSA verification is
-correct, GIVEN the hash behaves ideally and GIVEN the documented backend
-assumptions} --- with both \emph{given}s machine-visible. Compare the two
+correct, GIVEN the declared oracles} --- with every \emph{given}
+machine-visible. The companion repos push the posture one step further
+than this example: their SHA-512 is opaque with \emph{no properties
+assumed at all} --- not even ``behaves ideally''; the apex theorems hold
+for whatever bytes it produces --- and the backend question was
+\emph{eliminated} rather than assumed (extraction pins the serial path,
+which is real translated code, proven like everything below it). Compare the two
 postures: ``everything verified!'' (and hope nobody checks) versus ``these
 two assumptions, this ledger, audit me'' --- the second is both humbler and
 \emph{stronger}, because its claim survives the audit.

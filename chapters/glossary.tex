@@ -31,7 +31,9 @@ translates LLBC into pure Lean definitions
 
 \gloss{Cofactor} The factor $8$ in the Ed25519 group order $8\ell$;
 multiplying by it annihilates the small-torsion component of any point,
-which is why the verification equation reads $8sB = 8R + 8kA$
+which is why \emph{cofactored} verifiers (the ZIP-215 lineage) check
+$8sB = 8R + 8kA$. The verified dalek-lineage path checks the stricter
+\emph{canonical} uncofactored equation byte-exactly
 (Chapter~\ref{ch:pyramid}).
 
 \gloss{Commuting square} The diagram --- machine operation along the

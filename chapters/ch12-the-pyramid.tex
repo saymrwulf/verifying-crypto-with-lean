@@ -20,8 +20,8 @@ and the keys.
   \node[lay,fill=codebg,minimum width=10.2cm]     (fld) at (0,0)    {\textbf{Field $\Fp$}};
   \node[st] at (5.7,0)    {\textbf{done}: certificates in 4 repos, axiom-clean};
   \node[st] at (5.7,1.25) {\textbf{done}: complete addition, all 4 forks};
-  \node[st] at (5.7,2.5)  {\textbf{in progress}: foundations proven,\\ mul at the kernel frontier};
-  \node[st] at (5.7,3.75) {\textbf{ahead}: awaits scalars;\\ hash axiomatized by design};
+  \node[st] at (5.7,2.5)  {\textbf{done}: add, sub, Montgomery mul\\ certified, all 4 forks};
+  \node[st] at (5.7,3.75) {\textbf{done}: accept $\Leftrightarrow$ decompress$(R) = [k](-A){+}[s]B$;\\ hash an opaque oracle by design};
 \end{tikzpicture}
 \end{center}
 
@@ -167,35 +167,56 @@ $sB = R + kA$ is not. Three multiplications by $8$, bought by exactly the
 three-line computation above.
 \end{worked}
 
-The engineering, however, has a frontier, and this book has told you enough
-truth to locate it precisely. Scalar Montgomery multiplication mixes
-$2^{256}$-scale coefficients into single certificate steps; this is the
-kernel-capacity wall of Chapter~\ref{ch:field}, and it marks the current
-working edge of the campaign: additions and the foundational constants are
-certified (including the pleasing theorem that the code's constant
-\code{L} \emph{is} $\ell$); the multiplication path is a construction site
-with scaffolding --- decomposed lemmas, isolated carry steps ---
-mid-assembly, honestly labeled in-repo.
+The engineering met a wall here, and this book has told you enough truth
+to locate it precisely --- and to appreciate how it fell. Scalar Montgomery
+multiplication mixes $2^{256}$-scale coefficients into single certificate
+steps; this is the kernel-capacity wall of Chapter~\ref{ch:field}, and for
+a while it marked the campaign's working edge. It was crossed the way the
+method file predicts: re-decompose until every heavy identity is an
+isolated, context-free lemma the kernel checks alone --- exact-division
+Montgomery rounds, a double round through $RR \equiv R^2$ --- and the
+layer is now \emph{complete on all four forks}: add, sub, and Montgomery
+multiplication certified (including the pleasing theorem that the code's
+constant \code{L} \emph{is} $\ell$, digit for digit).
 
-\section{The apex: what ``verified signature'' will say}
+\section{The apex: what ``verified signature'' says}
 
-EdDSA verification accepts $(R, s)$ on message $m$ under key $A$ iff
-\[
-8 s B \;=\; 8 R + 8\,H(R, A, m)\,A
-\]
-in the curve group ($B$ the base point, $H$ = SHA-512, the $8$s absorbing
-the cofactor). The apex certificate will state: \emph{the extracted
-verification routine returns true exactly when this equation holds} ---
-given the two declared trusted-base entries you can already predict:
-SHA-512 as an ideal hash (axiomatized by design --- hash function
-correctness is a different mathematical universe), and the SIMD
-point-multiplication backends (untranslatable, documented). Everything
-between those declared boundaries and the field bedrock: kernel-checked,
-axiom-clean, per fork.
+EdDSA verification accepts $(R, s)$ on message $m$ under key $A$ when the
+verification equation holds --- and RFC~8032 admits two readings. The
+\emph{cofactored} form $8sB = 8R + 8kA$ (with $k = H(R,A,m)$; the $8$s
+absorb the torsion, as the exercises below explore) is what ZIP-215-style
+verifiers check. The dalek lineage this campaign verified checks the
+\emph{stricter, canonical} form: recompute $[k](-A) + [s]B$, encode it,
+and demand the signature's $R$ match \emph{byte for byte}. The apex
+certificates state, in four button-enforced tiers that climb from bytes
+to points, that the extracted verifier accepts exactly when:
 
-Read that sentence again with Chapter~\ref{ch:honesty} eyes: it is a
-\emph{smaller} claim than ``Ed25519 is verified!'' --- and that is exactly
-why you can believe it.
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{byte apex}: $\code{compress}([s]B - [k]A) = R$ as bytes;
+\item \textbf{half-lift}: $R$ \emph{is the canonical encoding} of
+  $[k](-A) + [s]B$;
+\item \textbf{point equation}: any valid curve point canonically encoded
+  by $R$ \emph{equals} $[k](-A) + [s]B$ --- encodings are injective on
+  the curve, courtesy of $d$'s non-squareness doing a second job;
+\item \textbf{full lift}: $R$ \emph{decompresses} to a valid on-curve
+  point equal to $[k](-A) + [s]B$ --- decompression itself proven, square
+  root, sign bit, and all.
+\end{itemize}
+
+The trusted base is \emph{smaller} than the one you might have predicted.
+SHA-512 enters as an opaque oracle with \textbf{no assumed properties at
+all} --- not even ``behaves like an ideal hash''; the theorems hold for
+whatever bytes it produces. The wire-format types stay opaque. And the
+point-multiplication backends are \emph{not} in the trusted base:
+extraction pins the serial path, which is real translated code, proven
+like everything below it. Each repo's check script has a dedicated phase
+that \lean{\#print axioms} all four tiers and fails the build if any
+cone deviates from that documented boundary by a single axiom.
+
+Read that again with Chapter~\ref{ch:honesty} eyes: it is a
+\emph{smaller} claim than ``Ed25519 is verified!'' --- nothing about the
+hash, nothing about signing, nothing about side channels --- and that is
+exactly why you can believe it.
 
 \section{What you now know, and where to take it}
 
@@ -213,10 +234,13 @@ Where to go from here, in increasing order of ambition:
 \item \textbf{Read a real proof end-to-end.} \code{FieldSpec.lean} in
   \code{dalek-ed25519-verified}, top to bottom, with this book as the
   decoder ring. Budget an afternoon; expect the odd hour of humility.
-\item \textbf{Extend the pyramid.} The scalar layer's open lemmas are
-  decomposed, labeled, and waiting; the repos' \code{CONTRIBUTING} notes
-  state exactly what a finished brick looks like (spec shape, axiom
-  audit, check-script entry). Frontier work, undergraduate-accessible.
+\item \textbf{Extend the pyramid.} The ed25519 pyramids are capped, but
+  the Pasta curve layer (Pallas group law and scalar multiplication) is
+  paused with its field foundations proven and the route mapped --- the
+  scalar layer's kernel-frontier crossing is the template, and the
+  control repo's \code{METHOD.md}/\code{TIERS.md} state exactly what a
+  finished brick looks like (spec shape, axiom audit, check-script
+  entry). Frontier work, undergraduate-accessible.
 \item \textbf{Verify something of yours.} Pick a 200-line pure function you
   actually use --- a parser, a checksum, a data structure --- write its
   denotation (what does it \emph{mean}?), state the square, prove it.
@@ -300,8 +324,8 @@ prime and $> 8$? (c) Conclude what an attacker who adds a small-order
 point to a public key changes, and what they provably cannot change.}
 
 \exercise{(Audit drill) Write down, from memory, the complete list of
-what the apex certificate will \emph{assume} (its trusted base) and what
-it will \emph{establish}, then check yourself against this chapter's
+what the apex certificates \emph{assume} (their trusted base) and what
+they \emph{establish}, then check yourself against this chapter's
 apex section. Anything you forgot is the thing to reread before you
 audit a real system.}
 
@@ -349,25 +373,32 @@ invertible on the $\Z_\ell$ part.'' (c) The attacker changes the point
 $X$ (so: byte-level equality checks, hashes of the key, uniqueness
 assumptions \emph{can} be affected --- real protocols have been bitten)
 but provably cannot change $8X$, hence cannot affect the truth value of
-any cofactored verification equation. The formal apex certificate
-inherits exactly this robustness, and the ``$8$'' in its statement is
-this exercise, immortalized.
+any cofactored verification equation. Note carefully which verifiers
+inherit this robustness: the \emph{cofactored} (ZIP-215) lineage. The
+verified dalek-lineage verifier deliberately checks the stricter
+canonical byte-equality criterion instead --- knowing \emph{which}
+equation a library actually checks is this exercise's real teeth, and
+the anza repo's ledger pins exactly that distinction for Solana's
+verifier.
 
 \solhead{12.3}
 \pathway Close the book. Write two columns: \emph{assumes} /
 \emph{establishes}. Then open the apex section and diff.
 \answer The list your memory should reproduce --- \emph{assumes}:
-(1) SHA-512 behaves as an ideal hash (axiomatized by design, in the
-trusted-base ledger); (2) the untranslatable SIMD point-multiplication
-backends meet their stated specs (documented, per fork); (3) the three
-standard Lean axioms; (4) the extraction pipeline preserves meaning
-(one tool, pinned versions). \emph{Establishes}: for every input in the
-bounds discipline, the extracted verification routine returns true
-\emph{iff} $8sB = 8R + 8\,H(R,A,m)\,A$ in the curve group --- with
-field arithmetic, group law, scalar arithmetic, and encoding each
-carried by its own kernel-checked layer below. If your two columns
-match this, you can audit a verification paper's abstract in ninety
-seconds --- which was the promise on the book's cover, kept.
+(1) SHA-512 as an opaque oracle, with \emph{no} properties assumed ---
+not even ideality; the theorems hold for whatever bytes it produces;
+(2) the opaque wire-format types (the signature struct and error type,
+per fork); (3) the three standard Lean axioms; (4) the extraction
+pipeline preserves meaning (one tool, pinned versions). Notably ABSENT:
+any backend assumption --- the serial path is pinned at extraction and
+proven as real code. \emph{Establishes}, in four tiers each pinned to
+exactly that boundary by the check script: the extracted verifier
+returns true \emph{iff} the signature's $R$ decompresses to a valid
+on-curve point equal to $[k](-A) + [s]B$ --- with field arithmetic,
+group law, scalar arithmetic, encoding, and decompression each carried
+by its own kernel-checked layer below. If your two columns match this,
+you can audit a verification paper's abstract in ninety seconds ---
+which was the promise on the book's cover, kept.
 
 \begin{checkpoint}
 The book's ending is a beginning, so the final checkpoint is prospective:

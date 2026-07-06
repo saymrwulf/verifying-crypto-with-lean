@@ -5,18 +5,18 @@ background** — from `1 + 1 = 2` to reading (and extending) real,
 machine-checked proofs that production elliptic-curve code is correct.
 
 This is the educational companion to a family of verification projects in
-which the arithmetic core of Ed25519 (from
+which complete Ed25519 proof pyramids (from
 [curve25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek)
-and three production forks) and the Pasta curves' field layer were
-machine-checked in Lean 4 against models extracted from the actual Rust
-sources:
+and three production forks — field, group law, scalars, and the signature
+verifier itself) and the Pasta curves' field layer were machine-checked in
+Lean 4 against models extracted from the actual Rust sources:
 
 | Companion project | What is verified there |
 |---|---|
-| [dalek-ed25519-verified](https://github.com/saymrwulf/dalek-ed25519-verified) | field 𝔽ₚ + Edwards group law + scalar foundations, upstream dalek |
-| [anza-ed25519-verified](https://github.com/saymrwulf/anza-ed25519-verified) | same layers, Solana's fork, its own extraction |
-| [risc0-ed25519-verified](https://github.com/saymrwulf/risc0-ed25519-verified) | same layers, RISC Zero's fork |
-| [betrusted-ed25519-verified](https://github.com/saymrwulf/betrusted-ed25519-verified) | same layers, Betrusted's fork |
+| [dalek-ed25519-verified](https://github.com/saymrwulf/dalek-ed25519-verified) | the complete pyramid, upstream dalek: field 𝔽ₚ + Edwards group law + scalar arithmetic mod ℓ + the four-tier signature apex (accept ⇔ decompress(R) = [k](−A)+[s]B, hash opaque) |
+| [anza-ed25519-verified](https://github.com/saymrwulf/anza-ed25519-verified) | the complete pyramid, Solana's fork, its own extraction |
+| [risc0-ed25519-verified](https://github.com/saymrwulf/risc0-ed25519-verified) | the complete pyramid, RISC Zero's fork |
+| [betrusted-ed25519-verified](https://github.com/saymrwulf/betrusted-ed25519-verified) | the complete pyramid, Betrusted's fork |
 | [pasta-pallas-verified](https://github.com/saymrwulf/pasta-pallas-verified) | Pallas modulus primality (Lucas/Pratt), Montgomery foundations |
 | [formal-verification-control](https://github.com/saymrwulf/formal-verification-control) | the method: invariants, terrain map, failure map, tooling |
 
@@ -103,6 +103,11 @@ In the spirit of Chapter 11:
 - The book's claims about the companion projects (what is proven, what is
   frontier) mirror those repos' own READMEs and TRUSTED-BASE ledgers at the
   time of writing; the repos, not this book, are the source of truth.
+  Re-audited 2026-07-06 after the signature apex reached its final
+  four-tier form (coherence pass 4): chapter 12's status diagram, apex
+  section, and audit-drill solution, chapter 11's boundary example,
+  chapter 8's extraction notes, the repo tour, and this table were
+  brought up to the proven state.
 - The PDF in the repo is built from the committed sources by the command
   above; rebuild it yourself if you don't trust binaries (good instinct).
 - The three named solution certificates were kernel-audited
